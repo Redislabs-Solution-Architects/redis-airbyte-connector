@@ -57,6 +57,51 @@ NULL entries inside arbitrary record dictionaries. The connector uses the
 CDK parser/command handlers and its own record-preserving serialization shim.
 A regression test verifies nested and top-level NULLs on the serialized wire.
 
+## Redis write destination
+
+The companion destination adds spec/check/write and ADBC bulk ingestion with
+Append and staged Overwrite. It uses the same pinned Python/native-driver
+runtime as the source. Check tests an actual probe-table write, read and cleanup.
+
+Expanded suite results: 92 unit/CLI tests and 6 native Redis source/destination
+tests passed together (98 passed, 1 Flight SQL test skipped in that run). The
+separate actual Flight SQL test also passed: 99 tests total. Both connector
+images built, and the Redis destination/source/destination CLI round trip passed.
+
+The write tests cover typed/nested arrays and records, nanosecond timestamps
+and clock times, explicit NULLs, exact string values, binary decoding,
+schema preflight, bounded row/JSON-byte batches, malformed input, incomplete
+bulk counts and state acknowledgement ordering. Legacy, per-stream and global
+state cursor blobs retain NULL values. Overwrite states are deferred until
+EOF and promotion; failure tests exercise rollback across multiple tables and
+retention of backups if recovery fails. A source ERROR trace also prevents
+Overwrite publication.
+
+Three native destination tests on Redis Software/Search verify a five-row
+typed write/read round trip, Append, failed Overwrite preserving old data,
+staging cleanup, retry, cancelled input and empty Overwrite. The separate
+`python3 scripts/e2e_redis.py` exercises both actual connector CLIs:
+
+```text
+Airbyte records -> Redis destination -> Redis source -> Redis destination
+```
+
+It compares all final values, including a large integer, exact decimal string,
+binary, nanosecond timestamp, NULL and nested array. It also compares exact
+per-stream/global state blobs and verifies a failed CLI Overwrite does not
+acknowledge a checkpoint or change the prior target. Retry and empty Overwrite
+then succeed.
+
+Overwrite is a sequence of autocommit rename/backup operations, not an atomic
+multi-table transaction. Only one writer per target is supported. A crash during
+promotion can need manual backup recovery. Append can persist part of a failed
+unacknowledged batch and duplicate it on retry; exactly-once behavior is not
+claimed. Numeric-looking strings remain VARCHAR values according to the schema.
+Clean EOF finalizes Overwrite; the job runner must report or abort upstream
+failures rather than close an incomplete input as if it completed successfully.
+Flight SQL destination writes and full Airbyte platform orchestration are not
+validated.
+
 ## Remaining boundaries
 
 Redis-backed production Flight SQL gateways, Flight TLS/authentication, deployed

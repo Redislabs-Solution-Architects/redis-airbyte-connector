@@ -1,9 +1,13 @@
-# Redis ADBC Airbyte source
+# Redis ADBC Airbyte source and destination
 
 A community Airbyte source implementing the initial scope of
 [redis/redis-adbc-driver#172](https://github.com/redis/redis-adbc-driver/issues/172).
 It consumes an ADBC `RecordBatchReader` and emits Airbyte JSON records through
-the Python CDK. Full refresh is the only supported sync mode.
+the Python CDK. Full refresh is the only supported source sync mode. A companion
+destination ingests Airbyte records into typed Redis SQL tables using ADBC Arrow
+batches, with Append and staged Overwrite.
+
+The upstream source proposal is [Airbyte PR #90323](https://github.com/airbytehq/airbyte/pull/90323).
 
 ## Build and run
 
@@ -101,6 +105,90 @@ database schemas can use `"schemas": [""]`.
 
 ```sh
 bash scripts/test-flight-sql.sh
+```
+
+## Write to Redis
+
+Build the companion destination from the same pinned driver/runtime:
+
+```sh
+docker build --target destination -t destination-redis-adbc:0.1.0 .
+docker run --rm destination-redis-adbc:0.1.0 spec
+cp examples/destination-config.json secrets/destination-config.json
+# Edit the URI before checking or writing.
+docker run --rm -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.0 \
+  check --config /config/destination-config.json
+docker run --rm -i -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.0 \
+  write --config /config/destination-config.json --catalog /config/catalog.json < records.jsonl
+```
+
+Register the image as a custom destination in self-managed Airbyte. Supply a
+configured catalog containing the exact incoming stream schema and choose
+Append or Overwrite. The destination requires Redis Search, autocommit and SQL
+schema/table/ingest permissions. Check creates, ingests, reads and drops a
+uniquely named probe table; it can create the configured destination schema.
+
+By default all tables are written to SQL schema `airbyte`, using the stream's
+name as the table name. The input namespace identifies records but does not
+change the target schema unless `use_stream_namespace` is enabled. Target name
+collisions fail before writes. Tables/schemas are created as needed through
+the Redis driver's SQL metadata; no arbitrary HASHes are adopted.
+
+| Incoming JSON Schema | Redis ingestion |
+| --- | --- |
+| Boolean | BOOLEAN |
+| Integer | Signed BIGINT; out-of-range values fail |
+| Number | DOUBLE; non-finite values and lossy large-integer conversion fail |
+| String | VARCHAR; exact integer/decimal strings remain strings |
+| Base64 string (`contentEncoding`) | Binary |
+| Date/time/date-time string | Arrow date/nanosecond time/timestamp; offsets normalize to UTC for timezone-aware fields |
+| Object with explicit properties | Typed nested record |
+| Array with an explicit item schema | Typed array |
+| Null-only field | Nullable string column |
+
+The destination follows the declared JSON schema. The source intentionally
+represents 64-bit integers and decimals as exact strings, so feeding its output
+into this destination preserves those strings in VARCHAR columns. It does not
+guess that numeric-looking strings should become SQL numbers. Date/time casts
+fail outside Arrow's representable range; they do not silently truncate.
+Required/null constraints are validated. Unknown fields, ambiguous unions,
+dynamic objects, tuple arrays and the driver's reserved `__key` column fail
+explicitly. Append requires the existing field names/types to match; schema
+evolution requires an explicit migration. Deduplication and CDC are unsupported.
+
+Row and input JSON-byte limits bound aggregate buffers across streams. A single record
+may exceed the batch-byte limit up to `max_record_bytes`; input lines have a
+hard 16 MiB limit. Malformed lines fail rather than being skipped. No source
+record or credential value is included in conversion/driver errors.
+
+Append writes directly and acknowledges each STATE only after all preceding
+records are flushed successfully. A failed unacknowledged batch may have
+partially persisted because Redis is autocommit-only; retries can duplicate it.
+There is no exactly-once claim.
+
+Overwrite builds uniquely named staging tables and preserves the prior target
+while input arrives. It defers all STATE acknowledgements until EOF and successful
+table promotion. Pending states are spooled to a temporary file, bounded by
+`max_state_bytes`; their cursor blobs retain explicit NULLs. Empty streams
+replace old data with an empty table. An input failure before promotion drops
+staging tables and leaves the prior targets intact. Promotion uses backup/rename
+operations and attempts restoration on failure; incomplete recovery retains
+`airbyte_backup_*` tables for inspection. Cleanup failures can leave backups.
+This is not an atomic multi-table transaction: readers may briefly see renamed
+tables, and process death during promotion can require manual backup recovery.
+Clean EOF is treated as completion. The job runner must report or abort upstream
+failures; a source that closes a truncated input without an ERROR trace cannot be
+distinguished from a completed input by this destination.
+Allow only one writer per target. Overwrite replaces the table definition and
+indexes; it is intended for dedicated destination tables, not application tables.
+
+The destination is direct Redis ADBC only. A production Flight SQL write path
+and full Airbyte platform job orchestration remain unvalidated.
+
+Run the complete destination/source/destination CLI round trip:
+
+```sh
+python3 scripts/e2e_redis.py
 ```
 
 ## Development and validation
