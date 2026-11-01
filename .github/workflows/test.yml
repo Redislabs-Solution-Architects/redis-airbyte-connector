@@ -1,0 +1,30 @@
+name: Connector validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      end_to_end:
+        description: Run disposable Redis Software to PostgreSQL destination sync
+        type: boolean
+        default: false
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: pip install -r requirements.lock && pip install --no-deps -e . && pip install pytest==9.2.0
+      - run: pytest -q -m 'not integration'
+      - run: docker build --target runtime -t source-redis-adbc:0.1.0 .
+      - run: docker run --rm source-redis-adbc:0.1.0 spec
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
+        run: python scripts/e2e.py
+        timeout-minutes: 20
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
+        run: bash scripts/test-flight-sql.sh
+        timeout-minutes: 15
