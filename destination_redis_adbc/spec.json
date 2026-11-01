@@ -1,0 +1,21 @@
+{
+  "documentationUrl": "https://github.com/alberttwong/redis-airbyte-connector",
+  "supported_destination_sync_modes": ["append", "overwrite"],
+  "connectionSpecification": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Redis ADBC destination",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["uri"],
+    "properties": {
+      "uri": {"type": "string", "minLength": 1, "title": "Redis URI", "airbyte_secret": true, "description": "redis:// or rediss:// endpoint with Redis Search and driver write permissions. URL-encode credentials and configure read/write timeouts."},
+      "schema": {"type": "string", "minLength": 1, "default": "airbyte", "description": "Destination SQL schema. Created if needed."},
+      "use_stream_namespace": {"type": "boolean", "default": false, "description": "Use a stream's namespace as its SQL schema when nonempty, otherwise use the configured schema."},
+      "batch_size": {"type": "integer", "minimum": 1, "maximum": 65536, "default": 1024},
+      "max_batch_bytes": {"type": "integer", "minimum": 1024, "maximum": 67108864, "default": 1048576},
+      "max_record_bytes": {"type": "integer", "minimum": 1024, "maximum": 16777216, "default": 10485760},
+      "max_state_bytes": {"type": "integer", "minimum": 1024, "maximum": 67108864, "default": 16777216, "description": "Limit for deferred state acknowledgements during staged Overwrite. States are spooled to a temporary file."},
+      "database_options": {"type": "object", "additionalProperties": {"type": "string"}, "airbyte_secret": true, "description": "Trusted ADBC database options. Connection and transaction settings cannot be overridden."}
+    }
+  }
+}

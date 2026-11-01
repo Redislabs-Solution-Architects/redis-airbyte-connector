@@ -19,6 +19,7 @@ COPY requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
 COPY pyproject.toml README.md ./
 COPY source_redis_adbc ./source_redis_adbc
+COPY destination_redis_adbc ./destination_redis_adbc
 RUN pip install --no-cache-dir --no-build-isolation --no-deps . && useradd --uid 10001 --create-home connector
 USER connector
 LABEL io.airbyte.name=source-redis-adbc io.airbyte.version=0.1.0
@@ -33,3 +34,10 @@ USER connector
 ENTRYPOINT ["python", "-m", "pytest"]
 
 FROM runtime AS production
+
+FROM runtime AS destination
+ENV AIRBYTE_ENTRYPOINT="python -m destination_redis_adbc"
+LABEL io.airbyte.name=destination-redis-adbc io.airbyte.version=0.1.0
+ENTRYPOINT ["python", "-m", "destination_redis_adbc"]
+
+FROM production AS default-source

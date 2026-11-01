@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       end_to_end:
-        description: Run disposable Redis Software to PostgreSQL destination sync
+        description: Run disposable PostgreSQL and Redis read/write sync tests
         type: boolean
         default: false
 jobs:
@@ -22,8 +22,13 @@ jobs:
       - run: pytest -q -m 'not integration'
       - run: docker build --target runtime -t source-redis-adbc:0.1.0 .
       - run: docker run --rm source-redis-adbc:0.1.0 spec
+      - run: docker build --target destination -t destination-redis-adbc:0.1.0 .
+      - run: docker run --rm destination-redis-adbc:0.1.0 spec
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
         run: python scripts/e2e.py
+        timeout-minutes: 20
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
+        run: python scripts/e2e_redis.py
         timeout-minutes: 20
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
         run: bash scripts/test-flight-sql.sh

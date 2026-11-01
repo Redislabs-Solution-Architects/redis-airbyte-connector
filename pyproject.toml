@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "source-redis-adbc"
 version = "0.1.0"
-description = "Full-refresh Airbyte source for Redis through Apache Arrow ADBC"
+description = "Airbyte source and destination for Redis through Apache Arrow ADBC"
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 dependencies = [
@@ -20,12 +20,14 @@ test = ["pytest==9.2.0"]
 
 [project.scripts]
 source-redis-adbc = "source_redis_adbc.__main__:main"
+destination-redis-adbc = "destination_redis_adbc.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["source_redis_adbc*"]
+include = ["source_redis_adbc*", "destination_redis_adbc*"]
 
 [tool.setuptools.package-data]
 source_redis_adbc = ["spec.json"]
+destination_redis_adbc = ["spec.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
