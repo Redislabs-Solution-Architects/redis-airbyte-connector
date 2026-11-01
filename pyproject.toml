@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "source-redis-adbc"
+version = "0.1.0"
+description = "Full-refresh Airbyte source for Redis through Apache Arrow ADBC"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "airbyte-cdk==7.45.0",
+  "adbc-driver-manager==1.13.0",
+  "adbc-driver-flightsql==1.13.0",
+  "pyarrow==26.0.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+
+[project.scripts]
+source-redis-adbc = "source_redis_adbc.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["source_redis_adbc*"]
+
+[tool.setuptools.package-data]
+source_redis_adbc = ["spec.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a running Redis Search server and native ADBC library"]
