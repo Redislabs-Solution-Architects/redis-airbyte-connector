@@ -30,6 +30,10 @@ class TransientAPIError(RuntimeError):
     """A readiness request reached Enterprise before its API was available."""
 
 
+class AuthenticationAPIError(RuntimeError):
+    """Management authentication was rejected."""
+
+
 def command(*args, stdin=None):
     result = subprocess.run(args, input=stdin, capture_output=True, text=True)
     if result.returncode:
@@ -83,6 +87,8 @@ class API:
             error.close()
             if status in (429, 502, 503, 504):
                 raise TransientAPIError(f"Enterprise API not ready (HTTP {status})") from None
+            if status == 401:
+                raise AuthenticationAPIError("Enterprise management authentication rejected") from None
             raise RuntimeError(f"Enterprise API {method} {path} failed (HTTP {status})") from None
 
 
@@ -146,6 +152,16 @@ def up():
         return status == "completed"
 
     wait("Enterprise cluster bootstrap", bootstrapped)
+
+    def authenticated():
+        # Bootstrap completion can precede installation of the admin credentials.
+        # Retry 401 only in this explicit startup phase, never during verification.
+        try:
+            return api("GET", "cluster")
+        except AuthenticationAPIError:
+            return False
+
+    wait("Enterprise authenticated management API", authenticated)
     certificate_payload = {"certificates": [
         {"name": name, "certificate": (DIRECTORY / "server.crt").read_text(),
          "key": (DIRECTORY / "server.key").read_text()} for name in ("api", "proxy")]}
