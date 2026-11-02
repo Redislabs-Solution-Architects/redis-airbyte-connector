@@ -167,6 +167,15 @@ class RedisWriter:
                         raise ConnectorError(
                             "The source reported an error; the destination will not finalize Overwrite."
                         )
+                    elif (
+                        message.type == Type.TRACE and message.trace
+                        and message.trace.type.value == "STREAM_STATUS"
+                        and message.trace.stream_status
+                        and message.trace.stream_status.status.value == "INCOMPLETE"
+                    ):
+                        raise ConnectorError(
+                            "The source reported an incomplete stream; the destination will not finalize Overwrite."
+                        )
                     elif message.type not in (Type.LOG, Type.TRACE):
                         raise ConnectorError("Unsupported input message type for the Redis destination.")
                 flush()
