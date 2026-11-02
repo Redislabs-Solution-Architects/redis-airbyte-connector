@@ -7,6 +7,10 @@ the published 0.1.1 artifacts:
 
 - 126 unit/CLI tests passed; metadata checks, actionlint, source-distribution
   build and `twine check` passed.
+- Undefined/unbound name checks passed. Docker network tests confirmed that the
+  default network attachment can change a node's gateway; lower fixture-network
+  priority preserves the Kubernetes route. Cleanup was verified on macOS and
+  Linux, including private persisted files and the generated kubeconfig.
 - Six native authenticated TLS Enterprise tests passed against the candidate
   images. Both PostgreSQL syncs and the Redis CLI round trip passed, including
   failed Overwrite, retry, empty Overwrite and exact checkpoint preservation.

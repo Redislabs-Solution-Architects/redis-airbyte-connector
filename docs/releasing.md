@@ -9,7 +9,7 @@ and native platform wheels. No new artifacts are published by pull-request CI.
 The reusable `Validate candidate artifacts` workflow is shared by PR validation
 and publishing. It requires:
 
-1. Unit/CLI tests, catalog metadata consistency, source-distribution build and
+1. Unit/CLI tests, undefined/unbound name checks, catalog metadata consistency, source-distribution build and
    package metadata checks.
 2. One build of each connector image on native AMD64 and ARM64 runners. The
    images are saved with archive SHA-256 checksums and Docker image IDs.
@@ -98,6 +98,10 @@ Build the two `:tested` images first using Docker targets `runtime` and
 `destination`. The platform helper pins abctl 0.30.4 and Airbyte chart 1.9.3 with stable application 2.0.1. It refuses to replace an existing local Airbyte installation and records
 the node ID before permitting cleanup. It requires Docker, network access and
 sufficient memory/disk for the platform and Enterprise fixture.
+Docker must support `network connect --gw-priority`. The fixture network uses
+lower gateway priority so Kubernetes retains its original control-plane route.
+Cleanup stops the owned cluster before restoring host ownership of its persisted
+files, then removes those files and the generated kubeconfig.
 
 ## Acceptance coverage
 

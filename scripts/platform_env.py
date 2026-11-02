@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import tarfile
 import urllib.request
@@ -16,6 +17,7 @@ ABCTL_VERSION = '0.30.4'
 CHART_VERSION = '1.9.3'
 APP_VERSION = '2.0.1'
 NODE = 'airbyte-abctl-control-plane'
+ABCTL_HOME = Path.home() / '.airbyte/abctl'
 
 
 def node_id():
@@ -46,7 +48,7 @@ def main():
     args = parser.parse_args()
     environment = {**os.environ, 'DO_NOT_TRACK': '1'}
     if args.action == 'up':
-        if node_id() or STATE.exists() or Path.home().joinpath('.airbyte/abctl/abctl.kubeconfig').exists():
+        if node_id() or STATE.exists() or (ABCTL_HOME / 'abctl.kubeconfig').exists() or (ABCTL_HOME / 'data').exists():
             raise RuntimeError('Refusing to replace an existing Airbyte installation or test state')
         STATE.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
         values = STATE.parent / 'values.json'
@@ -64,7 +66,22 @@ def main():
         state = json.loads(STATE.read_text())
         if node_id() != state['node_id']:
             raise RuntimeError('Refusing to remove an Airbyte installation not created by this test')
-        subprocess.run([tool(), 'local', 'uninstall', '--persisted'], env=environment, check=True)
+        node = json.loads(subprocess.check_output(['docker', 'inspect', NODE], text=True))[0]
+        # Remove the cluster first so its workloads cannot create more files.
+        subprocess.run([tool(), 'local', 'uninstall'], env=environment, check=True)
+        if node_id():
+            raise RuntimeError('The owned Airbyte node still exists after uninstall')
+        data = ABCTL_HOME / 'data'
+        if data.exists():
+            if data.is_symlink():
+                raise RuntimeError('Refusing to remove a symlinked Airbyte data directory')
+            # Kubernetes writes private directories as container users on Linux.
+            # Use the already-installed node image to restore host ownership.
+            subprocess.run(['docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+                '-v', f'{data}:/owned-data', '--entrypoint', 'chown', node['Image'],
+                '-hR', f'{os.getuid()}:{os.getgid()}', '/owned-data'], check=True)
+            shutil.rmtree(data)
+        (ABCTL_HOME / 'abctl.kubeconfig').unlink(missing_ok=True)
         STATE.unlink()
 
 

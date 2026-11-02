@@ -22,6 +22,23 @@ def docker(*args, **kwargs):
     return subprocess.check_output(["docker", *args], text=True, **kwargs).strip()
 
 
+def platform_status():
+    """Print workload states without configurations, environment values or logs."""
+    try:
+        pods = json.loads(docker('exec', NODE, 'kubectl', '--kubeconfig', '/etc/kubernetes/admin.conf',
+            '-n', NAMESPACE, 'get', 'pods', '-o', 'json'))['items']
+        for pod in pods:
+            statuses = pod['status'].get('initContainerStatuses', []) + pod['status'].get('containerStatuses', [])
+            states = []
+            for container in statuses:
+                state = container.get('state', {})
+                reason = state.get('waiting', {}).get('reason') or state.get('terminated', {}).get('reason') or 'running'
+                states.append(container['name'] + '=' + reason)
+            print('Platform pod ' + pod['metadata']['name'] + ': ' + ', '.join(states), flush=True)
+    except (subprocess.SubprocessError, ValueError, KeyError):
+        print('Platform pod diagnostics unavailable', flush=True)
+
+
 class API:
     def __init__(self, base):
         self.base = base.rstrip('/') + '/api/v1/'
@@ -57,7 +74,12 @@ class API:
                 self.token = None
                 self.token = self._request('applications/token', self.credentials, refresh=False)['access_token']
                 return self._request(path, body, method, public, refresh=False)
+            if code >= 500:
+                platform_status()
             raise RuntimeError(f'Airbyte {path} failed (HTTP {code})') from None
+        except (urllib.error.URLError, TimeoutError):
+            platform_status()
+            raise RuntimeError(f'Airbyte {path} did not respond') from None
 
     def job(self, job_id, expected='succeeded', timeout=600):
         deadline = time.monotonic() + timeout
@@ -96,7 +118,8 @@ def main():
     import_images([args.source_image, args.destination_image])
     networks = json.loads(docker('inspect', NODE))[0]['NetworkSettings']['Networks']
     if enterprise.NAME not in networks:
-        subprocess.run(['docker', 'network', 'connect', enterprise.NAME, NODE], check=True)
+        # Keep Kubernetes' original default gateway when adding database access.
+        subprocess.run(['docker', 'network', 'connect', '--gw-priority', '-1', enterprise.NAME, NODE], check=True)
     info = enterprise.owned_container()
     address = info['NetworkSettings']['Networks'][enterprise.NAME]['IPAddress']
     config = json.loads((enterprise.DIRECTORY / 'config.json').read_text())
