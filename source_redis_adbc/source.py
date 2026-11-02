@@ -22,6 +22,14 @@ class SourceRedisAdbc(Source):
 
     def _backend(self, config):
         validate_config(config, self.spec(None).connectionSpecification)
+        if config.get("read_consistency", "best_effort") == "shared_snapshot":
+            # A successful connectivity check must not imply a guarantee that
+            # neither the native driver nor our Flight SQL path can provide.
+            raise ConnectorError(
+                "Shared snapshots are unsupported for both direct Redis ADBC and Flight SQL. "
+                "This source cannot freeze all selected tables at one point in time. "
+                "Use read_consistency=best_effort only if mixed-time reads are acceptable."
+            )
         return self.backend_factory(config)
 
     def check(self, logger, config):
