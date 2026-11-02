@@ -10,7 +10,7 @@ custom destination in self-managed Airbyte. Set `schema` to a dedicated target
 schema and configure `rediss://` plus `tls_ca_certificate` for private CAs.
 Connection checks create and drop a uniquely named probe table. Omit unused
 optional database options rather than submitting an empty secret object on
-Airbyte 1.8.5.
+the pinned platform.
 
 Optional fields accept absent or explicit NULL values. Required/non-null fields
 and array-item types remain validated. Numeric-looking source strings remain

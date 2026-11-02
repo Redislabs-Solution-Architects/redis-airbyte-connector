@@ -26,6 +26,10 @@ IMAGE = "redislabs/redis:8.2.0-78.18"
 TEST_IMAGE = "source-redis-adbc-enterprise-test:0.1.1"
 
 
+class TransientAPIError(RuntimeError):
+    """A readiness request reached Enterprise before its API was available."""
+
+
 def command(*args, stdin=None):
     result = subprocess.run(args, input=stdin, capture_output=True, text=True)
     if result.returncode:
@@ -52,7 +56,7 @@ def wait(description, predicate, seconds=360):
             value = predicate()
             if value:
                 return value
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, TransientAPIError):
             pass
         time.sleep(2)
     raise RuntimeError("Timed out waiting for " + description)
@@ -77,6 +81,8 @@ class API:
         except urllib.error.HTTPError as error:
             status = error.code
             error.close()
+            if status in (429, 502, 503, 504):
+                raise TransientAPIError(f"Enterprise API not ready (HTTP {status})") from None
             raise RuntimeError(f"Enterprise API {method} {path} failed (HTTP {status})") from None
 
 

@@ -13,7 +13,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / 'secrets/platform-test/state.json'
 ABCTL_VERSION = '0.30.4'
-CHART_VERSION = '1.8.5'
+CHART_VERSION = '1.9.3'
+APP_VERSION = '2.0.1'
 NODE = 'airbyte-abctl-control-plane'
 
 
@@ -48,14 +49,16 @@ def main():
         if node_id() or STATE.exists() or Path.home().joinpath('.airbyte/abctl/abctl.kubeconfig').exists():
             raise RuntimeError('Refusing to replace an existing Airbyte installation or test state')
         STATE.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        values = STATE.parent / 'values.json'
+        values.write_text(json.dumps({'global': {'image': {'tag': APP_VERSION}}}))
         try:
             subprocess.run([tool(), 'local', 'install', '--chart-version', CHART_VERSION,
-                '--host', 'localhost', '--port', '8123', '--low-resource-mode', '--no-browser'],
+                '--values', str(values), '--host', 'localhost', '--port', '8123', '--low-resource-mode', '--no-browser'],
                 env=environment, check=True)
         finally:
             current = node_id()
             if current:
-                STATE.write_text(json.dumps({'node_id': current, 'chart_version': CHART_VERSION}) + '\n')
+                STATE.write_text(json.dumps({'node_id': current, 'chart_version': CHART_VERSION, 'app_version': APP_VERSION}) + '\n')
                 STATE.chmod(0o600)
     else:
         state = json.loads(STATE.read_text())

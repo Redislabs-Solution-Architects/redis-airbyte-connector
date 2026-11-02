@@ -18,7 +18,7 @@ and publishing. It requires:
    destination/source/destination round trip against those candidate images.
 4. A disposable Airbyte platform: register both custom definitions, check both
    connectors, discover streams, run actual sync jobs, repeat Overwrite, and
-   compare the final Redis data. Airbyte 1.8.5
+   compare the final Redis data. The test
    configurations omit unused empty secret objects to avoid its secret-hydration
    failure for an empty `database_options` object. The platform loads the saved AMD64 images.
 5. For releases, install and load each native wheel outside the checkout.
@@ -90,8 +90,7 @@ python scripts/enterprise_env.py down
 ```
 
 Build the two `:tested` images first using Docker targets `runtime` and
-`destination`. The platform helper pins abctl 0.30.4 and Airbyte chart/application
-1.8.5. It refuses to replace an existing local Airbyte installation and records
+`destination`. The platform helper pins abctl 0.30.4 and Airbyte chart 1.9.3 with stable application 2.0.1. It refuses to replace an existing local Airbyte installation and records
 the node ID before permitting cleanup. It requires Docker, network access and
 sufficient memory/disk for the platform and Enterprise fixture.
 

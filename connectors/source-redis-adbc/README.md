@@ -10,7 +10,7 @@ source in self-managed Airbyte. Supply a `rediss://` URI with named-user
 credentials. For a private CA, paste its PEM trust bundle into
 `tls_ca_certificate`; certificate verification remains enabled. Omit unused
 optional database options rather than submitting an empty secret object on
-Airbyte 1.8.5.
+the pinned platform.
 
 The package `redis-airbyte-connector` also provides `source-redis-adbc` for direct
 CLI use. See the repository README for schemas, supported Arrow types,
