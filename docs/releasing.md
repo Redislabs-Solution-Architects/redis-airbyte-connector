@@ -100,6 +100,9 @@ the node ID before permitting cleanup. It requires Docker, network access and
 sufficient memory/disk for the platform and Enterprise fixture.
 Docker must support `network connect --gw-priority`. The fixture network uses
 lower gateway priority so Kubernetes retains its original control-plane route.
+Registration uses the authenticated, workspace-scoped `create_custom` endpoints
+used by Airbyte's UI. The public API's long-running definition calls stalled
+workload initialization on the hosted runner.
 Cleanup stops the owned cluster before restoring host ownership of its persisted
 files, then removes those files and the generated kubeconfig.
 

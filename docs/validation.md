@@ -24,6 +24,10 @@ the published 0.1.1 artifacts:
   retained exact large integer and decimal strings and NULLs. Cancellation
   preserved the previously published target. This tests queued cancellation;
   it does not claim to interrupt an active platform write.
+- The same platform flow passed on a fresh Ubuntu AMD64 hosted runner using the
+  saved, tested image artifacts. Custom definitions use Airbyte's authenticated
+  workspace-scoped UI endpoints; registration, checks, discovery, all three
+  successful sync jobs, cancellation, exact row comparisons and cleanup passed.
 
 The real platform test exposed two destination compatibility issues now covered
 by regression tests: Airbyte's catalog normalization removes optional NULL unions,

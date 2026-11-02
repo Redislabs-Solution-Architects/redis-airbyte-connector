@@ -160,10 +160,11 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
     try:
         for kind, image, cfg in [('source', args.source_image, source_config), ('destination', args.destination_image, destination_config)]:
             repository, tag = image.rsplit(':', 1)
-            definition = api(f'workspaces/{workspace}/definitions/{kind}s', {'name': 'Redis ADBC test ' + token,
-                'dockerRepository': repository, 'dockerImageTag': tag,
-                'documentationUrl': 'https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector'}, public=True)
-            ids[kind + '_definition'] = definition.get('id') or definition['definitionId']
+            definition = api(kind + '_definitions/create_custom', {'workspaceId': workspace,
+                kind + 'Definition': {'name': 'Redis ADBC test ' + token,
+                    'dockerRepository': repository, 'dockerImageTag': tag,
+                    'documentationUrl': 'https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector'}})
+            ids[kind + '_definition'] = definition[kind + 'DefinitionId']
             created = api(kind + 's/create', {'workspaceId': workspace, kind + 'DefinitionId': ids[kind + '_definition'],
                 'name': 'Redis ADBC test ' + token, 'connectionConfiguration': cfg})
             ids[kind] = created[kind + 'Id']
