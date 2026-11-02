@@ -55,7 +55,7 @@ def messages(output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-image", default="source-redis-adbc:0.1.2")
+    parser.add_argument("--source-image", default="source-redis-adbc:0.1.3")
     parser.add_argument("--network", default=os.environ.get("REDIS_ENTERPRISE_NETWORK"),
                         help="Existing Docker network containing the Enterprise cluster")
     parser.add_argument("--tls-directory", type=Path, help="Mount test CA files at /enterprise-test")

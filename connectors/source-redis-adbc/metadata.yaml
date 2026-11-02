@@ -2,7 +2,7 @@ data:
   connectorType: source
   connectorSubtype: database
   definitionId: c9a244db-3055-4f6a-a778-8d3b12ae06d8
-  dockerImageTag: 0.1.2
+  dockerImageTag: 0.1.3
   dockerRepository: ghcr.io/redislabs-solution-architects/source-redis-adbc
   documentationUrl: https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector
   githubIssueLabel: source-redis-adbc
