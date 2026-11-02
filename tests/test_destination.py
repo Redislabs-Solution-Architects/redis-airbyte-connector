@@ -1,5 +1,6 @@
 import io
 import json
+import re
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -54,9 +55,33 @@ class Backend:
         self.config = config
         self.conn = Mock()
         self.cursor = self.conn.cursor.return_value
-        self.cursor.adbc_ingest.side_effect = lambda name, data, **kw: data.num_rows
+        self.cursor.adbc_ingest.side_effect = self.ingest
+        self.cursor.execute.side_effect = self.execute
         self.closed = False
         self.existing = existing or {}
+        self.data = {key: ["previous"] for key in self.existing}
+
+    def ingest(self, name, data, **kw):
+        key = (kw["db_schema_name"], name)
+        self.existing[key] = Table("redis", *key)
+        self.data.setdefault(key, []).extend(data.to_pylist())
+        return data.num_rows
+
+    def execute(self, sql):
+        identifier = r'"((?:[^"]|"")*)"'
+        rename = re.fullmatch(rf'ALTER TABLE {identifier}\.{identifier} RENAME TO {identifier}', sql)
+        drop = re.fullmatch(rf'DROP TABLE (?:IF EXISTS )?{identifier}\.{identifier}', sql)
+        if rename:
+            namespace, source, target = (part.replace('""', '"') for part in rename.groups())
+            key, new_key = (namespace, source), (namespace, target)
+            assert key in self.existing and new_key not in self.existing
+            del self.existing[key]
+            self.existing[new_key] = Table("redis", *new_key)
+            self.data[new_key] = self.data.pop(key)
+        elif drop:
+            key = tuple(part.replace('""', '"') for part in drop.groups())
+            self.existing.pop(key, None)
+            self.data.pop(key, None)
 
     @contextmanager
     def connection(self):
@@ -151,6 +176,7 @@ def test_failed_promotion_restores_backup_and_does_not_ack():
         if "airbyte_stage_" in sql and 'RENAME TO "items"' in sql and not failed:
             failed = True
             raise RuntimeError("injected rename failure")
+        b.execute(sql)
 
     b.cursor.execute.side_effect = execute
     with pytest.raises(RuntimeError):
@@ -268,6 +294,7 @@ def test_append_schema_mismatch_fails_before_any_write():
 def test_multitable_promotion_failure_rolls_back_previously_promoted_table():
     w, b = writer(existing=True)
     b.existing[("airbyte", "other")] = Table("redis", "airbyte", "other")
+    b.data[("airbyte", "other")] = ["previous"]
     c = catalog("overwrite")
     c.streams += catalog("overwrite", name="other").streams
     failed = False
@@ -277,6 +304,7 @@ def test_multitable_promotion_failure_rolls_back_previously_promoted_table():
         if "airbyte_stage_" in sql and 'RENAME TO "other"' in sql and not failed:
             failed = True
             raise RuntimeError("injected second-table promotion failure")
+        b.execute(sql)
 
     b.cursor.execute.side_effect = execute
     with pytest.raises(RuntimeError):
@@ -293,6 +321,7 @@ def test_incomplete_recovery_retains_backup_and_fails_safely():
     def execute(sql):
         if 'RENAME TO "items"' in sql:
             raise RuntimeError("password=secret")
+        b.execute(sql)
 
     b.cursor.execute.side_effect = execute
     with pytest.raises(ConnectorError, match="backup") as exc:
@@ -301,6 +330,184 @@ def test_incomplete_recovery_retains_backup_and_fails_safely():
     assert not any(
         c.args[0].startswith("DROP TABLE ") and "airbyte_backup_" in c.args[0] for c in b.cursor.execute.call_args_list
     )
+
+
+@pytest.mark.parametrize("forward_failure", [1, 2, 3, 4])
+@pytest.mark.parametrize("applied", [False, True])
+def test_forward_rename_failure_reconciles_actual_data(forward_failure, applied):
+    w, b = writer(existing=True)
+    b.existing[("airbyte", "other")] = Table("redis", "airbyte", "other")
+    b.data[("airbyte", "other")] = ["other previous"]
+    previous = dict(b.data)
+    c = catalog("overwrite")
+    c.streams += catalog("overwrite", name="other").streams
+    count = 0
+
+    def execute(sql):
+        nonlocal count
+        if sql.startswith("ALTER TABLE"):
+            count += 1
+            if count == forward_failure:
+                if applied:
+                    b.execute(sql)
+                raise RuntimeError("lost forward reply")
+        b.execute(sql)
+
+    b.cursor.execute.side_effect = execute
+    output = w.write(c, [record(1), record(2, stream="other"), state()])
+    with pytest.raises(RuntimeError, match="lost forward reply"):
+        next(output)
+    assert b.data == previous
+
+
+@pytest.mark.parametrize("forward_failure,recovery_failure", [
+    (forward, recovery) for forward in range(1, 5) for recovery in range(1, forward + 1)
+])
+def test_applied_recovery_rename_with_lost_reply_is_not_replayed(forward_failure, recovery_failure):
+    w, b = writer(existing=True)
+    b.existing[("airbyte", "other")] = Table("redis", "airbyte", "other")
+    b.data[("airbyte", "other")] = ["other previous"]
+    previous = dict(b.data)
+    c = catalog("overwrite")
+    c.streams += catalog("overwrite", name="other").streams
+    forward = recovery = 0
+    recovering = False
+
+    def execute(sql):
+        nonlocal forward, recovery, recovering
+        b.execute(sql)
+        if sql.startswith("ALTER TABLE"):
+            if recovering:
+                recovery += 1
+                if recovery == recovery_failure:
+                    raise RuntimeError("lost recovery reply")
+            else:
+                forward += 1
+                if forward == forward_failure:
+                    recovering = True
+                    raise RuntimeError("lost forward reply")
+
+    b.cursor.execute.side_effect = execute
+    with pytest.raises(RuntimeError, match="lost forward reply"):
+        next(w.write(c, [record(1), record(2, stream="other"), state()]))
+    assert recovery == forward_failure
+    assert b.data == previous
+
+
+@pytest.mark.parametrize("applied", [False, True])
+def test_new_target_lost_reply_restores_absence(applied):
+    w, b = writer()
+    failed = False
+
+    def execute(sql):
+        nonlocal failed
+        if sql.startswith("ALTER TABLE") and not failed:
+            failed = True
+            if applied:
+                b.execute(sql)
+            raise RuntimeError("lost forward reply")
+        b.execute(sql)
+
+    b.cursor.execute.side_effect = execute
+    with pytest.raises(RuntimeError):
+        next(w.write(catalog("overwrite"), [record(1), state()]))
+    assert b.data == {}
+
+
+@pytest.mark.parametrize("recovery_applied", [False, True])
+def test_new_target_recovery_error_preserves_data_unless_restoration_is_confirmed(recovery_applied):
+    w, b = writer()
+    renames = 0
+
+    def execute(sql):
+        nonlocal renames
+        if sql.startswith("ALTER TABLE"):
+            renames += 1
+            if renames == 1 or recovery_applied:
+                b.execute(sql)
+            raise RuntimeError("lost reply")
+        b.execute(sql)
+
+    b.cursor.execute.side_effect = execute
+    error = RuntimeError if recovery_applied else ConnectorError
+    with pytest.raises(error):
+        next(w.write(catalog("overwrite"), [record(1), state()]))
+    if recovery_applied:
+        assert b.data == {}
+    else:
+        assert b.data == {("airbyte", "items"): [{"id": 1}]}
+
+
+def test_multistream_metadata_outage_preserves_all_previous_and_staged_data():
+    w, b = writer(existing=True)
+    b.existing[("airbyte", "other")] = Table("redis", "airbyte", "other")
+    b.data[("airbyte", "other")] = ["other previous"]
+    c = catalog("overwrite")
+    c.streams += catalog("overwrite", name="other").streams
+    original_tables = b.tables
+    renames = 0
+
+    def tables(connection):
+        if renames == 3:
+            raise RuntimeError("metadata unavailable")
+        return original_tables(connection)
+
+    def execute(sql):
+        nonlocal renames
+        b.execute(sql)
+        if sql.startswith("ALTER TABLE"):
+            renames += 1
+            if renames == 3:
+                raise RuntimeError("lost reply")
+
+    b.tables = tables
+    b.cursor.execute.side_effect = execute
+    with pytest.raises(ConnectorError, match="Stop writers"):
+        next(w.write(c, [record(1), record(2, stream="other"), state()]))
+    assert len(b.data) == 4
+    for contents in (["previous"], ["other previous"], [{"id": 1}], [{"id": 2}]):
+        assert contents in b.data.values()
+    assert not any(call.args[0].startswith("DROP TABLE") for call in b.cursor.execute.call_args_list)
+
+
+@pytest.mark.parametrize("failure", ["metadata", "unexpected", "recovery-before", "recovery-unknown"])
+def test_uncertain_recovery_preserves_previous_and_staged_data(failure):
+    w, b = writer(existing=True)
+    original_tables = b.tables
+    failed = False
+    metadata_failed = False
+
+    def tables(connection):
+        if metadata_failed:
+            raise RuntimeError("password=secret-metadata")
+        return original_tables(connection)
+
+    def execute(sql):
+        nonlocal failed, metadata_failed
+        if sql.startswith("ALTER TABLE"):
+            if not failed:
+                failed = True
+                b.execute(sql)
+                if failure == "metadata":
+                    metadata_failed = True
+                elif failure == "unexpected":
+                    b.existing[("airbyte", "items")] = Table("redis", "airbyte", "items")
+                    b.data[("airbyte", "items")] = ["unexpected"]
+                raise RuntimeError("password=secret-forward")
+            if failure == "recovery-unknown":
+                b.execute(sql)
+                metadata_failed = True
+            raise RuntimeError("password=secret-recovery")
+        b.execute(sql)
+
+    b.tables = tables
+    b.cursor.execute.side_effect = execute
+    with pytest.raises(ConnectorError, match="Stop writers") as exc:
+        next(w.write(catalog("overwrite"), [record(1), state()]))
+    assert "secret" not in str(exc.value)
+    assert ["previous"] in b.data.values()
+    assert [{"id": 1}] in b.data.values()
+    assert not any(call.args[0].startswith("DROP TABLE") for call in b.cursor.execute.call_args_list)
 
 
 def test_source_error_trace_prevents_overwrite_publication():

@@ -1,5 +1,20 @@
 # Validation record
 
+## Overwrite lost-reply recovery
+
+On November 2, 2026, deterministic stateful cursor tests exercised rename errors
+both before and after applying each forward rename across two streams, and lost
+replies after each rollback rename. Assertions compare retained table contents,
+verify restoration of previously absent targets, and ensure pending STATE
+messages are withheld. Metadata failures, unexpected table layouts and failed or
+unverifiable recovery retain previous and staged data without destructive cleanup.
+The non-integration suite passed all 161 tests; seven integration tests were
+excluded from this run.
+
+These simulations do not qualify live Redis lost-reply behavior, reconnect
+behavior, process death or concurrent writers. Recovery remains autocommit and
+requires exclusive ownership of the target and generated staging/backup names.
+
 ## Release gate validation
 
 Validated on November 1, 2026, in the release-validation branch, without changing

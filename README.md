@@ -202,13 +202,24 @@ table promotion. Pending states are spooled to a temporary file, bounded by
 replace old data with an empty table. An input failure before promotion drops
 staging tables and leaves the prior targets intact. Promotion uses backup/rename
 operations and attempts restoration on failure; incomplete recovery retains
-`airbyte_backup_*` tables for inspection. Cleanup failures can leave backups.
+`airbyte_backup_*` and `airbyte_stage_*` tables for inspection. If a rename loses
+its reply, the writer checks the actual target/staging/backup table layout before
+recovering, including after a recovery rename loses its reply. It does not blindly
+retry the rename. If metadata cannot establish the outcome, affected tables are
+retained and pending STATE acknowledgements are withheld. Stop writers, inspect
+the configured targets and retained tables, preserve both previous and staged
+data, and restore the intended target names before retrying. Cleanup failures
+can leave backups.
 This is not an atomic multi-table transaction: readers may briefly see renamed
 tables, and process death during promotion can require manual backup recovery.
 Clean EOF is treated as completion. The job runner must report or abort upstream
 failures; a source that closes a truncated input without an ERROR trace cannot be
 distinguished from a completed input by this destination.
-Allow only one writer per target. Overwrite replaces the table definition and
+Allow only one writer per target, with no concurrent table creation, rename or
+deletion in its target/staging/backup names. Recovery identifies tables by their
+unique staging/backup names and observed layout; it cannot detect another writer
+replacing a table under the same name. Process death bypasses this recovery logic.
+Overwrite replaces the table definition and
 indexes; it is intended for dedicated destination tables, not application tables.
 
 The destination is direct Redis ADBC only. A production Flight SQL write path
