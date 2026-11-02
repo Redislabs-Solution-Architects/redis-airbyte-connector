@@ -229,7 +229,8 @@ docker build --target test -t source-redis-adbc-test:0.1.1 .
 docker run --rm source-redis-adbc-test:0.1.1 -m 'not integration'
 ```
 
-Local Python uses the bundled native driver by default. Set `REDIS_ADBC_LIBRARY`
+Platform-wheel installations use the bundled native driver by default. For
+editable/source installations, run `python scripts/build_native.py` first. Set `REDIS_ADBC_LIBRARY`
 only when testing a custom native shared library.
 All integration tests require a dedicated, disposable Redis Enterprise cluster
 (Redis Software or Redis Cloud) with Search, TLS enabled, and a database username

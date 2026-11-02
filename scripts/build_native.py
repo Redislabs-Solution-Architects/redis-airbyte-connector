@@ -3,6 +3,7 @@
 from pathlib import Path
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +17,8 @@ def run(*args, **kwargs):
 
 
 def main():
+    docker_ref = re.search(r"^ARG REDIS_ADBC_REF=(\w+)$", (ROOT / "Dockerfile").read_text(), re.MULTILINE)
+    assert docker_ref and docker_ref.group(1) == DRIVER_REF, "Native driver pins must match"
     destination = ROOT / "source_redis_adbc"
     if platform.system() == "Linux":
         # Debian Bookworm fixes the Linux glibc build baseline at 2.36.
