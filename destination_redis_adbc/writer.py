@@ -31,6 +31,7 @@ class Plan:
     prepared: bool = False
     promoted: bool = False
     backup_exists: bool = False
+    cleanup_safe: bool = True
     rows: list = field(default_factory=list)
 
     def target(self, name=None):
@@ -179,7 +180,7 @@ class RedisWriter:
                     elif message.type not in (Type.LOG, Type.TRACE):
                         raise ConnectorError("Unsupported input message type for the Redis destination.")
                 flush()
-                self._promote(cursor, list(plans.values()))
+                self._promote(cursor, list(plans.values()), lambda: backend.tables(connection))
                 if deferred:
                     states.seek(0)
                     for line in states:
@@ -189,35 +190,75 @@ class RedisWriter:
                 with suppress(Exception):
                     cursor.adbc_cancel()
                 for plan in plans.values():
-                    if plan.overwrite and plan.prepared and not plan.promoted:
+                    if plan.overwrite and plan.prepared and not plan.promoted and plan.cleanup_safe:
                         with suppress(Exception):
                             cursor.execute(f"DROP TABLE IF EXISTS {plan.target(plan.work_name)}")
 
     @staticmethod
-    def _promote(cursor, plans):
+    def _promote(cursor, plans, tables):
         overwrites = [p for p in plans if p.overwrite]
+        # Once renames begin, cleanup requires positively established recovery.
+        for plan in overwrites:
+            plan.cleanup_safe = False
+
+        def layout(plan):
+            present = tables()
+            return frozenset(
+                name for name in (plan.name, plan.work_name, plan.backup_name)
+                if (plan.namespace, name) in present
+            )
+
+        def expected(plan):
+            return frozenset(
+                ([plan.name] if plan.promoted or (plan.existed and not plan.backup_exists) else [])
+                + ([] if plan.promoted else [plan.work_name])
+                + ([plan.backup_name] if plan.backup_exists else [])
+            )
+
+        def rename(plan, source, target, attribute, value, recovering=False):
+            # UUID staging/backup names and an exclusive writer let the observed
+            # layout identify the two tables, even when their schemas are equal.
+            before = expected(plan)
+            after = (before - {source}) | {target}
+            if source not in before or target in before or layout(plan) != before:
+                raise ConnectorError("Overwrite table layout changed unexpectedly.")
+            try:
+                cursor.execute(f"ALTER TABLE {plan.target(source)} RENAME TO {quote(target)}")
+            except BaseException:
+                observed = layout(plan)
+                if observed == after:
+                    setattr(plan, attribute, value)
+                    if recovering:
+                        return
+                elif observed != before:
+                    raise ConnectorError("Overwrite rename outcome could not be established.") from None
+                raise
+            setattr(plan, attribute, value)
+
         try:
             for plan in overwrites:
                 if plan.existed:
-                    cursor.execute(f"ALTER TABLE {plan.target()} RENAME TO {quote(plan.backup_name)}")
-                    plan.backup_exists = True
-                cursor.execute(f"ALTER TABLE {plan.target(plan.work_name)} RENAME TO {quote(plan.name)}")
-                plan.promoted = True
+                    rename(plan, plan.name, plan.backup_name, "backup_exists", True)
+                rename(plan, plan.work_name, plan.name, "promoted", True)
         except BaseException:
             recovery_failed = False
             for plan in reversed(overwrites):
                 try:
+                    if layout(plan) != expected(plan):
+                        raise ConnectorError("Overwrite recovery table layout is uncertain.")
                     if plan.promoted:
-                        cursor.execute(f"ALTER TABLE {plan.target()} RENAME TO {quote(plan.work_name)}")
-                        plan.promoted = False
+                        rename(plan, plan.name, plan.work_name, "promoted", False, recovering=True)
                     if plan.backup_exists:
-                        cursor.execute(f"ALTER TABLE {plan.target(plan.backup_name)} RENAME TO {quote(plan.name)}")
-                        plan.backup_exists = False
+                        rename(plan, plan.backup_name, plan.name, "backup_exists", False, recovering=True)
+                    plan.cleanup_safe = True
                 except BaseException:
                     recovery_failed = True
             if recovery_failed:
                 raise ConnectorError(
-                    "Overwrite recovery was incomplete. Previous data was retained in airbyte_backup_* tables; inspect the destination schema before retrying."
+                    "Overwrite recovery was incomplete or its outcome is uncertain; no pending STATE was acknowledged. "
+                    "Automatic cleanup was disabled for affected tables. Stop writers and inspect the configured targets, "
+                    "airbyte_backup_* and airbyte_stage_* tables in the destination schema; preserve both previous and "
+                    "staged data and restore the intended target names before retrying. Driver diagnostics were withheld."
                 ) from None
             raise
         for plan in overwrites:
