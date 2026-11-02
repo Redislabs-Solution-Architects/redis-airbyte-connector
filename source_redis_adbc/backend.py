@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import tempfile
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 
@@ -27,6 +28,8 @@ def validate_config(config, spec):
         jsonschema.Draft7Validator(spec).validate(config)
     except jsonschema.ValidationError:
         raise ConnectorError("Invalid connector configuration; check the connection specification.") from None
+    if any(not isinstance(value, str) for value in config.get("database_options", {}).values()):
+        raise ConnectorError("Database option values must be strings.")
     mode = config.get("connection_type", "redis")
     schemes = ("redis://", "rediss://") if mode == "redis" else ("grpc://", "grpc+tls://", "grpc+tcp://")
     if not config["uri"].startswith(schemes):
@@ -37,6 +40,50 @@ def validate_config(config, spec):
 
 
 def connect(config):
+    certificate = config.get("tls_ca_certificate")
+    if not certificate:
+        return _connect(config)
+    options = dict(config.get("database_options", {}))
+    if (config.get("connection_type", "redis") != "redis" or
+            not config["uri"].startswith("rediss://") or "adbc.redis.tls_ca_file" in options):
+        raise ConnectorError("Inline Redis CA certificates require rediss:// and cannot be combined with a CA file.")
+    directory = tempfile.TemporaryDirectory(prefix="redis-airbyte-ca-")
+    try:
+        path = Path(directory.name) / "ca.pem"
+        path.write_text(certificate)
+        path.chmod(0o600)
+        options["adbc.redis.tls_ca_file"] = str(path)
+        connection = _connect({**config, "database_options": options})
+    except BaseException:
+        directory.cleanup()
+        raise
+    return _CertificateConnection(connection, directory)
+
+
+class _CertificateConnection:
+    """Keep the private CA file available until all native handles are closed."""
+
+    def __init__(self, connection, directory):
+        self.connection = connection
+        self.directory = directory
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+    def close(self):
+        try:
+            self.connection.close()
+        finally:
+            self.directory.cleanup()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+def _connect(config):
     options = dict(config.get("database_options", {}))
     if config.get("connection_type", "redis") == "flight_sql":
         from adbc_driver_flightsql import dbapi as flight

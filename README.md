@@ -330,3 +330,16 @@ The manual CI integration job provisions this environment automatically. Its
 optional `flight_image` input adds a gateway from an image accessible to the CI
 runner; without it, CI runs native integration and destination tests.
 See `docs/validation.md` for historical results and validation boundaries.
+
+## Release validation
+
+Pull requests and tagged releases run the same required native TLS integration,
+Airbyte acceptance, CLI round-trip and actual Airbyte platform checks. Candidate
+images are saved, tested and published without rebuilding; the GitHub release
+stays in draft until publication and public artifact verification succeed.
+See [docs/releasing.md](docs/releasing.md) for gates, dry runs and recovery.
+
+For private Redis CAs in Airbyte, set `tls_ca_certificate` to the PEM trust bundle.
+Both connectors retain it in a private temporary file for the connection lifetime,
+verify TLS normally and remove it when the connection closes. This avoids requiring
+an operator-managed CA file mount in each Airbyte workload.

@@ -1,53 +1,14 @@
 name: Connector validation
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      end_to_end:
-        description: Run TLS Redis Enterprise source and destination tests
-        type: boolean
-        default: false
-      flight_image:
-        description: Optional Enterprise-capable Redis Flight SQL image accessible to the runner
-        type: string
-        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  unit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: requirements.lock
-      - run: pip install -r requirements.lock && pip install --no-deps -e . && pip install pytest==9.2.0
-      - run: pytest -q -m 'not integration'
-      - run: docker build --target runtime -t source-redis-adbc:0.1.1 .
-      - run: docker run --rm source-redis-adbc:0.1.1 spec
-      - run: docker build --target destination -t destination-redis-adbc:0.1.1 .
-      - run: docker run --rm destination-redis-adbc:0.1.1 spec
-      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        name: Provision TLS Redis Enterprise test environment
-        run: python scripts/enterprise_env.py up
-        timeout-minutes: 10
-      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end && inputs.flight_image != '' }}
-        name: Provision authenticated TLS Flight SQL gateway
-        env:
-          FLIGHT_IMAGE: ${{ inputs.flight_image }}
-        run: |
-          docker pull "$FLIGHT_IMAGE"
-          python scripts/enterprise_env.py gateway --flight-image "$FLIGHT_IMAGE"
-      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        name: Run Enterprise integration and destination tests
-        run: |
-          python scripts/enterprise_env.py test
-          python scripts/enterprise_env.py e2e
-        timeout-minutes: 20
-      - if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        name: Remove test environment
-        run: |
-          if test -f secrets/enterprise-test/state.json; then
-            python scripts/enterprise_env.py down
-          fi
+  validate:
+    uses: ./.github/workflows/validate.yml

@@ -94,6 +94,12 @@ class RecordConverter:
             return _convert(self.root, value)
         except ConnectorError:
             raise
+        except jsonschema.ValidationError as error:
+            raise ConnectorError(
+                "A record does not match the destination schema "
+                f"({error.validator} constraint at {list(error.absolute_path)}; "
+                f"received {type(error.instance).__name__})."
+            ) from None
         except Exception:
             # ValidationError and Arrow exceptions can contain record values.
             raise ConnectorError(

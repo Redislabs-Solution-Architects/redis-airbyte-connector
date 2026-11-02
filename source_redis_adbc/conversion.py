@@ -58,7 +58,7 @@ def type_schema(dtype):
 def schema_to_json(schema):
     if len(set(schema.names)) != len(schema.names):
         raise ConversionError("Duplicate Arrow field names cannot be represented as JSON")
-    return {"type": "object", "properties": {f.name: field_schema(f) for f in schema}, "additionalProperties": False}
+    return {"type": "object", "properties": {f.name: field_schema(f) for f in schema}, "additionalProperties": True}
 
 
 def scalar_to_json(scalar, dtype):
