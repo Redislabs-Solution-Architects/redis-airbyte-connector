@@ -118,6 +118,20 @@ on completion, failure or cancellation; SIGTERM interrupts active reads and
 attempts ADBC cancellation. SIGKILL cannot run cleanup. Backpressure stops the
 source from requesting the next Arrow batch; the driver/server may buffer data.
 
+`read_consistency` defaults to `best_effort`, including when omitted from an
+existing configuration. Reads observe live data; full refresh does not freeze
+values within a table or across selected tables, schemas or shards. Concurrent
+deletes, expiry and DDL can also affect the read. Reusing one connection does not
+provide a shared snapshot.
+
+Set `"read_consistency": "shared_snapshot"` if your workflow requires one
+point-in-time view for the entire sync. **This requirement is currently
+unsupported:** check fails and discover/read raise an error before connecting
+or emitting records, for both direct Redis ADBC and Flight SQL. It never falls
+back to best-effort reads. Change the setting to `best_effort` only if the weaker
+guarantee meets your needs. See the [snapshot feasibility decision](docs/source-consistency.md)
+for upstream dependencies and the validation required before enabling snapshots.
+
 ## Flight SQL
 
 Set `connection_type` to `flight_sql`, supply a `grpc+tls://` gateway URI and

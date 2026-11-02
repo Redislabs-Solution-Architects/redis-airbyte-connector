@@ -49,6 +49,16 @@
         "default": 1024,
         "description": "Redis Arrow batch row limit. Gateway batch sizes are controlled by its server."
       },
+      "read_consistency": {
+        "type": "string",
+        "enum": [
+          "best_effort",
+          "shared_snapshot"
+        ],
+        "default": "best_effort",
+        "title": "Read consistency requirement",
+        "description": "best_effort reads live data: concurrent writes, deletes, TTL expiry and DDL can affect results within and across tables. shared_snapshot requests one point-in-time view for the sync, but is currently unsupported for both Redis ADBC and Flight SQL and fails check, discover and read before connecting."
+      },
       "database_options": {
         "type": "object",
         "additionalProperties": true,

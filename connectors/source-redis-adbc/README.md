@@ -16,6 +16,12 @@ The package `redis-airbyte-connector` also provides `source-redis-adbc` for dire
 CLI use. See the repository README for schemas, supported Arrow types,
 configuration, deployment and consistency boundaries.
 
+`read_consistency` defaults to `best_effort`: a full refresh reads live data
+without a shared point-in-time view. Requesting `shared_snapshot` currently
+fails check, discover and read before a connection is opened, for both native
+Redis ADBC and Flight SQL. See [source consistency](../../docs/source-consistency.md)
+for the upstream blocker and proposed snapshot contract.
+
 `acceptance-test-config.yml` runs the official spec, successful/failed checks,
 discovery, expected-record and repeat full-refresh suites. The release fixture
 supplies generated TLS credentials and a dedicated five-row table; no credentials

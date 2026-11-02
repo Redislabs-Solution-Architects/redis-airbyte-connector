@@ -41,6 +41,60 @@ def test_failed_check_status():
     assert source.check(None, {"uri": "redis://localhost"}).status == Status.FAILED
 
 
+@pytest.mark.parametrize("connection_type,uri", [
+    ("redis", "rediss://user:secret@localhost"),
+    ("flight_sql", "grpc+tls://localhost:1234"),
+])
+def test_shared_snapshot_requirement_fails_before_backend_creation(connection_type, uri):
+    factory = Mock()
+    source = SourceRedisAdbc(factory)
+    config = {"uri": uri, "connection_type": connection_type, "read_consistency": "shared_snapshot"}
+
+    status = source.check(None, config)
+    assert status.status == Status.FAILED
+    assert "Shared snapshots are unsupported" in status.message
+    assert "secret" not in status.message
+    with pytest.raises(ConnectorError, match="Shared snapshots are unsupported"):
+        source.discover(None, config)
+    with pytest.raises(ConnectorError, match="Shared snapshots are unsupported"):
+        next(source.read(None, config, configured()))
+    factory.assert_not_called()
+
+
+@pytest.mark.parametrize("consistency", [None, "best_effort"])
+@pytest.mark.parametrize("connection_type,uri", [
+    ("redis", "rediss://localhost"),
+    ("flight_sql", "grpc+tls://localhost:1234"),
+])
+def test_best_effort_consistency_preserves_full_refresh(consistency, connection_type, uri):
+    backend = Mock()
+    backend.discover.return_value = []
+    backend.read.return_value = (item for item in [(Table("redis", "public", "items"), {"id": "1"})])
+    source = SourceRedisAdbc(lambda config: backend)
+    config = {"uri": uri, "connection_type": connection_type}
+    if consistency is not None:
+        config["read_consistency"] = consistency
+
+    assert source.check(None, config).status == Status.SUCCEEDED
+    assert source.discover(None, config).streams == []
+    messages = list(source.read(None, config, configured()))
+    assert [message.type for message in messages] == [Type.RECORD]
+    assert messages[0].record.data == {"id": "1"}
+
+
+@pytest.mark.parametrize("consistency", ["snapshot", "", True, None])
+def test_invalid_consistency_is_rejected_without_connecting(consistency):
+    factory = Mock()
+    source = SourceRedisAdbc(factory)
+    config = {"uri": "redis://localhost", "read_consistency": consistency}
+    assert source.check(None, config).status == Status.FAILED
+    with pytest.raises(ConnectorError, match="Invalid connector configuration"):
+        source.discover(None, config)
+    with pytest.raises(ConnectorError, match="Invalid connector configuration"):
+        next(source.read(None, config, configured()))
+    factory.assert_not_called()
+
+
 def test_incremental_and_state_rejected():
     source = SourceRedisAdbc()
     with pytest.raises(ConnectorError, match="Only full_refresh"):
