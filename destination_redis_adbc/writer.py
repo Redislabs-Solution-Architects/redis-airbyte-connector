@@ -8,12 +8,12 @@ from contextlib import closing, suppress
 from dataclasses import dataclass, field
 
 import pyarrow as pa
-from airbyte_cdk.models import AirbyteMessageSerializer, DestinationSyncMode, Type
+from airbyte_cdk.models import DestinationSyncMode, Type
 
 from source_redis_adbc.backend import AdbcBackend, ConnectorError, quote
 
 from .conversion import RecordConverter
-from .protocol import validate_state
+from .protocol import load_message, validate_state
 
 logger = logging.getLogger("airbyte.destination_redis_adbc")
 
@@ -174,7 +174,7 @@ class RedisWriter:
                 if deferred:
                     states.seek(0)
                     for line in states:
-                        yield AirbyteMessageSerializer.load(json.loads(line))
+                        yield load_message(json.loads(line))
             finally:
                 # Best effort cancellation/cleanup must not replace the primary error.
                 with suppress(Exception):

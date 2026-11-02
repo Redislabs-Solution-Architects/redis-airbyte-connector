@@ -26,6 +26,14 @@ IMAGE = "redislabs/redis:8.2.0-78.18"
 TEST_IMAGE = "source-redis-adbc-enterprise-test:0.1.1"
 
 
+class TransientAPIError(RuntimeError):
+    """A readiness request reached Enterprise before its API was available."""
+
+
+class AuthenticationAPIError(RuntimeError):
+    """Management authentication was rejected."""
+
+
 def command(*args, stdin=None):
     result = subprocess.run(args, input=stdin, capture_output=True, text=True)
     if result.returncode:
@@ -52,7 +60,7 @@ def wait(description, predicate, seconds=360):
             value = predicate()
             if value:
                 return value
-        except (urllib.error.URLError, TimeoutError, ConnectionError):
+        except (urllib.error.URLError, TimeoutError, ConnectionError, TransientAPIError):
             pass
         time.sleep(2)
     raise RuntimeError("Timed out waiting for " + description)
@@ -77,10 +85,14 @@ class API:
         except urllib.error.HTTPError as error:
             status = error.code
             error.close()
+            if status in (429, 502, 503, 504):
+                raise TransientAPIError(f"Enterprise API not ready (HTTP {status})") from None
+            if status == 401:
+                raise AuthenticationAPIError("Enterprise management authentication rejected") from None
             raise RuntimeError(f"Enterprise API {method} {path} failed (HTTP {status})") from None
 
 
-def certificates():
+def certificates(database_ip=None):
     command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30",
         "-keyout", str(DIRECTORY / "ca.key"), "-out", str(DIRECTORY / "ca.crt"),
         "-subj", "/CN=Airbyte Enterprise test CA", "-addext", "basicConstraints=critical,CA:TRUE",
@@ -88,7 +100,8 @@ def certificates():
     command("openssl", "req", "-newkey", "rsa:2048", "-nodes",
         "-keyout", str(DIRECTORY / "server.key"), "-out", str(DIRECTORY / "server.csr"), "-subj", "/CN=localhost")
     (DIRECTORY / "server.ext").write_text(
-        f"subjectAltName=DNS:localhost,DNS:{NAME},IP:127.0.0.1\n"
+        f"subjectAltName=DNS:localhost,DNS:host.docker.internal,DNS:{NAME},IP:127.0.0.1"
+        + (f",IP:{database_ip}" if database_ip else "") + "\n"
         "extendedKeyUsage=serverAuth\nbasicConstraints=critical,CA:FALSE\n"
         "keyUsage=critical,digitalSignature,keyEncipherment\n"
         "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n")
@@ -112,11 +125,11 @@ def up():
     ROOT.joinpath("secrets").mkdir(mode=0o700, exist_ok=True)
     ROOT.joinpath("secrets").chmod(0o700)
     DIRECTORY.mkdir(mode=0o755, exist_ok=False)
-    certificates()
     docker("network", "create", "--label", f"{LABEL}={ROOT}", NAME)
     docker("run", "-d", "--name", NAME, "--network", NAME, "--label", f"{LABEL}={ROOT}",
         "--cap-add", "SYS_RESOURCE", "-p", "127.0.0.1::9443", "-p", "127.0.0.1::12000", IMAGE)
     info = owned_container()
+    certificates(info["NetworkSettings"]["Networks"][NAME]["IPAddress"])
     state = {"container": NAME, "network": NAME, "image": IMAGE,
         "image_id": info["Image"],
         "api_port": int(info["NetworkSettings"]["Ports"]["9443/tcp"][0]["HostPort"]),
@@ -124,6 +137,9 @@ def up():
         "admin_password": secrets.token_urlsafe(32), "password": secrets.token_urlsafe(32),
         "username": "airbyte-test@example.com"}
     save("state.json", state)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for key in ("admin_password", "password"):
+            print("::add-mask::" + state[key], flush=True)
     api = API(state, verify=False)
     wait("Enterprise management API", lambda: api("GET", "bootstrap"))
     api("POST", "bootstrap/create_cluster", {"action": "create_cluster", "cluster": {"name": "airbyte-test.local"},
@@ -136,9 +152,20 @@ def up():
         return status == "completed"
 
     wait("Enterprise cluster bootstrap", bootstrapped)
-    api("PUT", "cluster/certificates", {"certificates": [
+
+    def authenticated():
+        # Bootstrap completion can precede installation of the admin credentials.
+        # Retry 401 only in this explicit startup phase, never during verification.
+        try:
+            return api("GET", "cluster")
+        except AuthenticationAPIError:
+            return False
+
+    wait("Enterprise authenticated management API", authenticated)
+    certificate_payload = {"certificates": [
         {"name": name, "certificate": (DIRECTORY / "server.crt").read_text(),
-         "key": (DIRECTORY / "server.key").read_text()} for name in ("api", "proxy")]})
+         "key": (DIRECTORY / "server.key").read_text()} for name in ("api", "proxy")]}
+    wait("Enterprise certificate installation", lambda: api("PUT", "cluster/certificates", certificate_payload) or True)
     api = API(state)
     wait("CA-verified management API", lambda: api("GET", "cluster"))
     role = api("POST", "roles", {"name": "airbyte-test", "management": "none"})["uid"]
@@ -257,27 +284,37 @@ def gateway(image):
     print("Redis-backed TLS Flight SQL gateway started; run the test action to verify it.", flush=True)
 
 
-def test():
+def test(source_image=None):
     verify()
-    subprocess.run(["docker", "build", "--target", "test", "-t", TEST_IMAGE, str(ROOT)], check=True)
+    if not source_image:
+        subprocess.run(["docker", "build", "--target", "test", "-t", TEST_IMAGE, str(ROOT)], check=True)
     args = ["docker", "run", "--rm", "--network", NAME, "-v", f"{DIRECTORY}:/enterprise-test:ro",
         "-e", "REDIS_ENTERPRISE_CONFIG=/enterprise-test/config.json"]
-    if (DIRECTORY / "flight.json").exists():
+    if source_image:
+        args.extend(["-v", f"{ROOT / 'tests'}:/validation/tests:ro",
+                     "-v", f"{ROOT / 'scripts'}:/validation/scripts:ro",
+                     "--entrypoint", "sh", source_image, "-c",
+                     "python -m pip install --quiet --target /tmp/test-tools pytest==9.2.0 && "
+                     "PYTHONPATH=/tmp/test-tools:/validation python -m pytest -q --tb=line "
+                     "/validation/tests/test_integration.py /validation/tests/test_destination_integration.py"])
+    elif (DIRECTORY / "flight.json").exists():
         args.extend(["-e", "FLIGHT_SQL_CONFIG=/enterprise-test/flight.json", TEST_IMAGE, "-q", "--tb=line", "-m", "integration"])
     else:
         args.extend([TEST_IMAGE, "-q", "--tb=line", "tests/test_integration.py", "tests/test_destination_integration.py"])
     subprocess.run(args, check=True)
 
 
-def e2e():
+def e2e(source_image=None, destination_image=None):
     verify()
-    image = "source-redis-adbc-enterprise:0.1.1"
-    subprocess.run(["docker", "build", "--target", "runtime", "-t", image, str(ROOT)], check=True)
+    image = source_image or "source-redis-adbc-enterprise:0.1.1"
+    if not source_image:
+        subprocess.run(["docker", "build", "--target", "runtime", "-t", image, str(ROOT)], check=True)
     environment = {**os.environ, "REDIS_ENTERPRISE_CONFIG": str(DIRECTORY / "config.json")}
     subprocess.run([os.sys.executable, str(ROOT / "scripts/e2e.py"), "--source-image", image,
         "--network", NAME, "--tls-directory", str(DIRECTORY)], env=environment, check=True)
-    destination = "destination-redis-adbc-enterprise:0.1.1"
-    subprocess.run(["docker", "build", "--target", "destination", "-t", destination, str(ROOT)], check=True)
+    destination = destination_image or "destination-redis-adbc-enterprise:0.1.1"
+    if not destination_image:
+        subprocess.run(["docker", "build", "--target", "destination", "-t", destination, str(ROOT)], check=True)
     subprocess.run([os.sys.executable, str(ROOT / "scripts/e2e_redis.py"), "--source-image", image,
         "--destination-image", destination, "--network", NAME, "--tls-directory", str(DIRECTORY)],
         env=environment, check=True)
@@ -304,10 +341,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("up", "verify", "gateway", "test", "e2e", "down"))
     parser.add_argument("--flight-image", help="Existing Enterprise-capable Redis Flight SQL image")
+    parser.add_argument("--source-image", help="Use this existing image without rebuilding")
+    parser.add_argument("--destination-image", help="Use this existing image without rebuilding")
     args = parser.parse_args()
     if args.action == "gateway":
         if not args.flight_image:
             parser.error("gateway requires --flight-image with TLS and Redis ACL support")
         gateway(args.flight_image)
+    elif args.action == "test":
+        test(args.source_image)
+    elif args.action == "e2e":
+        e2e(args.source_image, args.destination_image)
     else:
         globals()[args.action]()

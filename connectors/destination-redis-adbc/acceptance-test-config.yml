@@ -1,0 +1,38 @@
+{
+  "connector_image": "redis-airbyte/destination-redis-adbc:tested",
+  "test_strictness_level": "low",
+  "acceptance_tests": {
+    "spec": {
+      "tests": [
+        {
+          "spec_path": "spec.json",
+          "config_path": "config.json"
+        }
+      ]
+    },
+    "connection": {
+      "tests": [
+        {
+          "config_path": "config.json",
+          "status": "succeed"
+        },
+        {
+          "config_path": "invalid.json",
+          "status": "failed"
+        }
+      ]
+    },
+    "discovery": {
+      "bypass_reason": "Source-only suite. Native tests and real platform syncs validate destination writes and state ordering."
+    },
+    "basic_read": {
+      "bypass_reason": "Source-only suite. Native tests and real platform syncs validate destination writes and state ordering."
+    },
+    "full_refresh": {
+      "bypass_reason": "Source-only suite. Native tests and real platform syncs validate destination writes and state ordering."
+    },
+    "incremental": {
+      "bypass_reason": "Source-only suite. Native tests and real platform syncs validate destination writes and state ordering."
+    }
+  }
+}

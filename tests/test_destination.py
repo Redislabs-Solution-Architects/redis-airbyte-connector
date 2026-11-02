@@ -214,6 +214,22 @@ def test_state_acknowledgements_preserve_nulls(wire):
     assert json.loads(message_to_json(message)) == wire
 
 
+@pytest.mark.parametrize("mode", ["append", "overwrite"])
+@pytest.mark.parametrize("kind", ["LEGACY", "STREAM", "GLOBAL"])
+def test_platform_checkpoint_envelope_survives_parse_write_and_spool(mode, kind):
+    payload = {
+        "LEGACY": {"data": {"cursor": None}},
+        "STREAM": {"stream": {"stream_descriptor": {"name": "items"}, "stream_state": {"cursor": None}}},
+        "GLOBAL": {"global": {"shared_state": {"cursor": None}, "stream_states": []}},
+    }[kind]
+    wire = {"type": "STATE", "state": {"type": kind, "id": 42, "future_field": {"value": None}, **payload}}
+    inputs = DestinationRedisAdbc()._parse_input_stream(io.StringIO(json.dumps(wire) + "\n"))
+    w, backend = writer()
+    acknowledged = list(w.write(catalog(mode), inputs))
+    assert [json.loads(message_to_json(message)) for message in acknowledged] == [wire]
+    assert backend.cursor.adbc_ingest.called
+
+
 @pytest.mark.parametrize(
     "line",
     [

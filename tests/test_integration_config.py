@@ -45,3 +45,26 @@ def test_flight_integration_requires_tls_and_credentials(monkeypatch, tmp_path, 
     monkeypatch.setenv("FLIGHT_SQL_CONFIG", str(path))
     with pytest.raises(ValueError, match="grpc\\+tls:// and username/password"):
         flight_config()
+
+
+def test_enterprise_readiness_retries_transient_api_errors(monkeypatch):
+    from scripts import enterprise_env
+
+    calls = []
+    def ready():
+        calls.append(True)
+        if len(calls) == 1:
+            raise enterprise_env.TransientAPIError('HTTP 503')
+        return True
+    monkeypatch.setattr(enterprise_env.time, 'sleep', lambda seconds: None)
+    assert enterprise_env.wait('test API', ready, seconds=1)
+    assert len(calls) == 2
+
+
+def test_enterprise_readiness_does_not_hide_authentication_failure():
+    from scripts import enterprise_env
+
+    def denied():
+        raise RuntimeError('HTTP 401')
+    with pytest.raises(RuntimeError, match='401'):
+        enterprise_env.wait('test API', denied, seconds=1)

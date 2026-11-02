@@ -1,0 +1,182 @@
+name: Validate candidate artifacts
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: ''
+      build_wheels:
+        type: boolean
+        default: false
+    outputs:
+      version:
+        value: ${{ jobs.unit.outputs.version }}
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.lock && pip install --no-deps -e . && pip install pytest==9.2.0 ruff==0.17.3 build twine
+      - run: ruff check --select F821,F823 source_redis_adbc destination_redis_adbc scripts tests
+      - run: python scripts/check_metadata.py
+      - run: pytest -q -m 'not integration'
+      - id: version
+        run: python -c 'import os,tomllib; v=tomllib.load(open("pyproject.toml","rb"))["project"]["version"]; open(os.environ["GITHUB_OUTPUT"],"a").write(f"version={v}\n")'
+      - run: python -m build --sdist && twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+  images:
+    needs: unit
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build each candidate once
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          docker build --target runtime --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" -t redis-airbyte/source-redis-adbc:tested .
+          docker build --target destination --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" -t redis-airbyte/destination-redis-adbc:tested .
+          python scripts/image_artifacts.py save
+      - name: Provision authenticated TLS Redis Enterprise
+        run: python scripts/enterprise_env.py up
+        timeout-minutes: 10
+      - name: Native integration tests against the candidate runtime
+        run: python scripts/enterprise_env.py test --source-image redis-airbyte/source-redis-adbc:tested
+      - name: Official Airbyte acceptance suites
+        run: python scripts/acceptance_test.py --source-image redis-airbyte/source-redis-adbc:tested --destination-image redis-airbyte/destination-redis-adbc:tested
+        timeout-minutes: 15
+      - name: PostgreSQL and Redis CLI round trips
+        run: python scripts/enterprise_env.py e2e --source-image redis-airbyte/source-redis-adbc:tested --destination-image redis-airbyte/destination-redis-adbc:tested
+        timeout-minutes: 20
+      - name: Verify tested image identities
+        run: python scripts/image_artifacts.py verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images-${{ matrix.arch }}
+          path: image-artifacts/
+          compression-level: 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-identities-${{ matrix.arch }}
+          path: image-artifacts/images.json
+      - name: Remove disposable Enterprise fixture
+        if: always()
+        run: |
+          if test -f secrets/enterprise-test/state.json; then python scripts/enterprise_env.py down; fi
+  platform:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: images-amd64
+          path: image-artifacts
+      - run: python scripts/image_artifacts.py load
+      - run: python scripts/enterprise_env.py up
+        timeout-minutes: 10
+      - run: python scripts/platform_env.py up
+        timeout-minutes: 30
+      - name: Register connectors, sync, replay and verify destination data
+        run: python scripts/platform_test.py --source-image redis-airbyte/source-redis-adbc:tested --destination-image redis-airbyte/destination-redis-adbc:tested
+        timeout-minutes: 20
+      - run: python scripts/image_artifacts.py verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-evidence
+          path: platform-evidence.json
+      - name: Remove owned platform and Enterprise fixtures
+        if: always()
+        run: |
+          if test -f secrets/platform-test/state.json; then python scripts/platform_env.py down; fi
+          if test -f secrets/enterprise-test/state.json; then python scripts/enterprise_env.py down; fi
+  wheels:
+    if: inputs.build_wheels
+    needs: images
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+            platform: manylinux_2_36_x86_64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            platform: manylinux_2_36_aarch64
+          - runner: macos-14
+            arch: macos
+            platform: macosx_12_0_arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: images-${{ matrix.arch }}
+          path: image-artifacts
+      - name: Extract the native library from the tested Linux image
+        if: runner.os == 'Linux'
+        run: |
+          python scripts/image_artifacts.py load
+          container=$(docker create redis-airbyte/source-redis-adbc:tested)
+          docker cp "$container:/app/source_redis_adbc/libadbc_driver_redis.so" source_redis_adbc/
+          docker cp "$container:/app/source_redis_adbc/native-LICENSE" source_redis_adbc/
+          docker rm "$container"
+      - uses: actions/setup-go@v5
+        if: runner.os == 'macOS'
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - if: runner.os == 'macOS'
+        run: python scripts/build_native.py
+      - run: pip install build twine
+      - run: python -m build --wheel && twine check dist/*
+        env:
+          REDIS_WHEEL_PLATFORM: ${{ matrix.platform }}
+      - run: pip install dist/*.whl && pip check
+      - name: Verify installed wheel outside the checkout
+        working-directory: /tmp
+        run: |
+          source-redis-adbc spec
+          destination-redis-adbc spec
+          python -c 'import ctypes; from source_redis_adbc.backend import driver_path; assert ctypes.CDLL(driver_path()).AdbcDriverRedisInit'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist/*.whl

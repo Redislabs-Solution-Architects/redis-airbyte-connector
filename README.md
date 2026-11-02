@@ -178,7 +178,9 @@ represents 64-bit integers and decimals as exact strings, so feeding its output
 into this destination preserves those strings in VARCHAR columns. It does not
 guess that numeric-looking strings should become SQL numbers. Date/time casts
 fail outside Arrow's representable range; they do not silently truncate.
-Required/null constraints are validated. Unknown fields, ambiguous unions,
+Required/null constraints are validated. Optional destination fields accept both
+missing and explicit NULL values, including platform-normalized catalogs that
+omit the null type union. Array item nullability remains explicit. Unknown fields, ambiguous unions,
 dynamic objects, tuple arrays and the driver's reserved `__key` column fail
 explicitly. Append requires the existing field names/types to match; schema
 evolution requires an explicit migration. Deduplication and CDC are unsupported.
@@ -330,3 +332,16 @@ The manual CI integration job provisions this environment automatically. Its
 optional `flight_image` input adds a gateway from an image accessible to the CI
 runner; without it, CI runs native integration and destination tests.
 See `docs/validation.md` for historical results and validation boundaries.
+
+## Release validation
+
+Pull requests and tagged releases run the same required native TLS integration,
+Airbyte acceptance, CLI round-trip and actual Airbyte platform checks. Candidate
+images are saved, tested and published without rebuilding; the GitHub release
+stays in draft until publication and public artifact verification succeed.
+See [docs/releasing.md](docs/releasing.md) for gates, dry runs and recovery.
+
+For private Redis CAs in Airbyte, set `tls_ca_certificate` to the PEM trust bundle.
+Both connectors retain it in a private temporary file for the connection lifetime,
+verify TLS normally and remove it when the connection closes. This avoids requiring
+an operator-managed CA file mount in each Airbyte workload.

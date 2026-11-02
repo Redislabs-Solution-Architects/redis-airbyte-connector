@@ -196,9 +196,55 @@ def test_missing_native_library_has_actionable_error(monkeypatch):
 @pytest.mark.parametrize("config", [
     {}, {"uri": "http://localhost"}, {**CONFIG, "batch_size": 0},
     {**CONFIG, "schemas": []}, {**CONFIG, "database_options": {"uri": "redis://other"}},
-    {**CONFIG, "connection_type": "flight_sql"}, {**CONFIG, "unknown": "secret"},
+    {**CONFIG, "connection_type": "flight_sql"}, {**CONFIG, "database_options": {"option": 123}},
 ])
 def test_invalid_config_is_safe(config):
     with pytest.raises(ConnectorError) as exc:
         validate_config(config, SourceRedisAdbc().spec(None).connectionSpecification)
     assert "secret" not in str(exc.value)
+
+
+def test_inline_ca_lifetime_and_cleanup(monkeypatch):
+    from pathlib import Path
+    from unittest.mock import Mock
+    import source_redis_adbc.backend as backend
+
+    native = Mock()
+    paths = []
+    def opened(config):
+        path = Path(config['database_options']['adbc.redis.tls_ca_file'])
+        assert path.read_text() == 'test CA'
+        assert path.stat().st_mode & 0o777 == 0o600
+        paths.append(path)
+        return native
+    monkeypatch.setattr(backend, '_connect', opened)
+    with backend.connect({'uri': 'rediss://example', 'tls_ca_certificate': 'test CA'}) as connection:
+        assert connection.cursor() is native.cursor.return_value
+        assert paths[0].exists()
+    native.close.assert_called_once()
+    assert not paths[0].exists()
+
+
+def test_inline_ca_cleanup_on_open_failure(monkeypatch):
+    from pathlib import Path
+    import source_redis_adbc.backend as backend
+
+    paths = []
+    def failed(config):
+        paths.append(Path(config['database_options']['adbc.redis.tls_ca_file']))
+        raise RuntimeError('test connection failure')
+    monkeypatch.setattr(backend, '_connect', failed)
+    with pytest.raises(RuntimeError, match='test connection failure'):
+        backend.connect({'uri': 'rediss://example', 'tls_ca_certificate': 'test CA'})
+    assert not paths[0].exists()
+
+
+@pytest.mark.parametrize('config', [
+    {'uri': 'redis://example'},
+    {'uri': 'rediss://example', 'database_options': {'adbc.redis.tls_ca_file': '/other'}},
+    {'uri': 'grpc+tls://example', 'connection_type': 'flight_sql'},
+])
+def test_inline_ca_rejects_conflicting_modes(config):
+    from source_redis_adbc.backend import connect
+    with pytest.raises(ConnectorError, match='Inline Redis CA'):
+        connect({**config, 'tls_ca_certificate': 'test CA'})

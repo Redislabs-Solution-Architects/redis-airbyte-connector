@@ -8,7 +8,6 @@ from airbyte_cdk.destinations import Destination
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
-    AirbyteMessageSerializer,
     ConnectorSpecificationSerializer,
     Status,
     Type,
@@ -21,7 +20,7 @@ from source_redis_adbc.backend import (
     validate_config,
 )
 
-from .protocol import message_to_json, validate_state
+from .protocol import load_message, message_to_json, validate_state
 from .writer import RedisWriter, logger
 
 
@@ -79,7 +78,7 @@ class DestinationRedisAdbc(Destination):
                 data = json.loads(
                     line, parse_constant=lambda value: (_ for _ in ()).throw(ValueError("non-finite JSON"))
                 )
-                message = AirbyteMessageSerializer.load(data)
+                message = load_message(data)
                 if message.type == Type.RECORD and message.record is None:
                     raise ValueError("record payload is required")
                 if message.type == Type.STATE and message.state is None:

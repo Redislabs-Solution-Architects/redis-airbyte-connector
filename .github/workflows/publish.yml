@@ -1,105 +1,58 @@
 name: Publish release
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to publish (for example v0.1.1)
+        description: Existing release tag (leave empty for a validation-only run of this ref)
         type: string
-        required: true
-      publish_pypi:
-        description: Publish Python distributions to PyPI
+        default: ''
+      publish:
+        description: Publish the tested artifacts and finalize the draft release
         type: boolean
-        default: true
+        default: false
 permissions:
   contents: read
 concurrency:
   group: publish-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.release.outputs.version }}
+      publish: ${{ steps.release.outputs.publish }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Verify release tag and package version
-        id: version
+      - id: release
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
         run: |
-          python - <<'PY'
-          import os, re, subprocess, tomllib
-          from pathlib import Path
-          tag = os.environ['RELEASE_TAG']
-          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
-          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Expected a stable vX.Y.Z tag'
-          assert tag == f'v{version}', 'Tag must match package version'
-          assert subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip() == subprocess.check_output(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}']).strip()
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'version={version}\n')
-          PY
-      - run: pip install -r requirements.lock && pip install build twine pytest==9.2.0
-      - run: python -m build --sdist && twine check dist/*
-      - run: pip install --no-deps -e . && pip check
-      - run: pytest -q -m 'not integration'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: dist/
-  wheels:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            platform: manylinux_2_36_x86_64
-          - runner: ubuntu-24.04-arm
-            platform: manylinux_2_36_aarch64
-          - runner: macos-14
-            platform: macosx_12_0_arm64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - uses: actions/setup-go@v5
-        if: runner.os == 'macOS'
-        with:
-          go-version: '1.26.10'
-          cache: false
-      - run: python scripts/build_native.py
-      - run: pip install build twine
-      - run: python -m build --wheel && twine check dist/*
-        env:
-          REDIS_WHEEL_PLATFORM: ${{ matrix.platform }}
-      - run: pip install dist/*.whl && pip check
-      - name: Verify the installed wheel and native library
-        working-directory: /tmp
-        run: |
-          source-redis-adbc spec
-          destination-redis-adbc spec
-          python - <<'PY'
-          import ctypes
-          from source_redis_adbc.backend import driver_path
-          assert ctypes.CDLL(driver_path()).AdbcDriverRedisInit
-          PY
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheel-${{ matrix.platform }}
-          path: dist/*.whl
+          if test "$PUBLISH" = true; then
+            test -n "$TAG"
+            python scripts/release.py prepare --tag "$TAG" --publish
+          else
+            python scripts/release.py prepare --tag "$TAG"
+          fi
+  validate:
+    needs: prepare
+    uses: ./.github/workflows/validate.yml
+    with:
+      ref: ${{ inputs.tag || github.sha }}
+      build_wheels: true
   distributions:
-    needs: [build, wheels]
+    needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -116,92 +69,28 @@ jobs:
         with:
           name: distributions
           path: dist/
-  containers:
-    needs: build
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
-        image: [source-redis-adbc, destination-redis-adbc]
-        include:
-          - image: source-redis-adbc
-            target: runtime
-          - image: destination-redis-adbc
-            target: destination
-          - runner: ubuntu-latest
-            arch: amd64
-          - runner: ubuntu-24.04-arm
-            arch: arm64
-    permissions:
-      contents: read
-      packages: write
+  publication-preflight:
+    needs: [prepare, distributions]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: docker/setup-buildx-action@v3
-      - name: Registry namespace
-        id: registry
-        env:
-          OWNER: ${{ github.repository_owner }}
-        run: echo "namespace=ghcr.io/${OWNER,,}" >> "$GITHUB_OUTPUT"
-      - uses: docker/login-action@v3
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/setup-python@v5
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build image for smoke test
-        uses: docker/build-push-action@v6
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
         with:
-          context: .
-          target: ${{ matrix.target }}
-          load: true
-          tags: connector-smoke:release
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
-      - run: docker run --rm connector-smoke:release spec
-      - name: Publish native architecture image
-        uses: docker/build-push-action@v6
+          name: distributions
+          path: dist
+      - uses: actions/download-artifact@v4
         with:
-          context: .
-          target: ${{ matrix.target }}
-          push: true
-          tags: |
-            ${{ steps.registry.outputs.namespace }}/${{ matrix.image }}:${{ needs.build.outputs.version }}-${{ matrix.arch }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ needs.build.outputs.version }}
-            org.opencontainers.image.licenses=Apache-2.0
-          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
-  container-manifests:
-    needs: [build, containers]
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        image: [source-redis-adbc, destination-redis-adbc]
-    permissions:
-      packages: write
-    steps:
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish combined architecture manifests
-        env:
-          OWNER: ${{ github.repository_owner }}
-          IMAGE: ${{ matrix.image }}
-          VERSION: ${{ needs.build.outputs.version }}
-        run: |
-          image="ghcr.io/${OWNER,,}/$IMAGE"
-          docker buildx imagetools create -t "$image:$VERSION" -t "$image:latest" "$image:$VERSION-amd64" "$image:$VERSION-arm64"
-          docker buildx imagetools inspect "$image:$VERSION"
+          pattern: image-identities-*
+          path: identities
+      - run: python scripts/release.py preflight --identities identities
   pypi:
-    needs: distributions
-    if: github.event_name == 'release' || inputs.publish_pypi
+    needs: publication-preflight
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -213,19 +102,112 @@ jobs:
           path: dist
       - run: rm dist/SHA256SUMS
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+  containers:
+    needs: [prepare, publication-preflight]
+    if: needs.prepare.outputs.publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: images-${{ matrix.arch }}
+          path: image-artifacts
+      - run: python scripts/image_artifacts.py load
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the tested images without rebuilding
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: python scripts/image_artifacts.py publish --namespace ghcr.io/redislabs-solution-architects --version "$VERSION" --arch "$ARCH"
+  manifests:
+    needs: [prepare, containers, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          for name in source-redis-adbc destination-redis-adbc; do
+            image="ghcr.io/redislabs-solution-architects/$name"
+            docker buildx imagetools create -t "$image:$VERSION" "$image:$VERSION-amd64" "$image:$VERSION-arm64"
+          done
   release-assets:
-    needs: distributions
+    needs: [prepare, distributions]
+    if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - uses: actions/download-artifact@v4
         with:
           name: distributions
           path: dist
-      - name: Attach distributions and checksums
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/release.py assets
+  finalize:
+    needs: [prepare, manifests, pypi, release-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-identities-*
+          path: identities
+      - name: Verify public artifacts, promote latest tags, then publish the announcement
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: gh release upload "$RELEASE_TAG" dist/* --clobber
+        run: python scripts/release.py finalize --identities identities

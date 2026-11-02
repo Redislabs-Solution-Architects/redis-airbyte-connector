@@ -1,0 +1,30 @@
+data:
+  connectorType: source
+  connectorSubtype: database
+  definitionId: c9a244db-3055-4f6a-a778-8d3b12ae06d8
+  dockerImageTag: 0.1.1
+  dockerRepository: ghcr.io/redislabs-solution-architects/source-redis-adbc
+  documentationUrl: https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector
+  githubIssueLabel: source-redis-adbc
+  icon: icon.svg
+  license: Apache-2.0
+  name: Redis (ADBC)
+  supportLevel: community
+  releaseStage: alpha
+  allowedHosts:
+    hosts: ["*"]
+  registryOverrides:
+    oss:
+      enabled: false
+    cloud:
+      enabled: false
+  remoteRegistries:
+    pypi:
+      enabled: true
+      packageName: redis-airbyte-connector
+  tags: [language:python, cdk:python]
+  connectorTestSuitesOptions:
+    - suite: unitTests
+    - suite: integrationTests
+    - suite: acceptanceTests
+metadataSpecVersion: "1.0"
