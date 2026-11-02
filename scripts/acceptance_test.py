@@ -83,8 +83,16 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
                 '--acceptance-test-config', '/test_input', '-q', '--tb=line', '-m', 'not backward_compatibility',
                 '--junitxml', f'/test_input/{kind}-acceptance.xml'], check=True)
     finally:
-        if not args.engine:
-            subprocess.run(['docker', 'rm', '-f', engine], check=True, stdout=subprocess.DEVNULL)
+        try:
+            if not args.engine:
+                subprocess.run(['docker', 'rm', '-f', engine], check=True, stdout=subprocess.DEVNULL)
+        finally:
+            # Official CAT runs as root and creates private log directories. Give
+            # our fixture back to its host owner so Linux cleanup can remove it.
+            # -h prevents dereferencing symlinks outside the mounted fixture.
+            subprocess.run(['docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+                '-v', f'{folder}:/test_input', '--entrypoint', 'chown', args.source_image,
+                '-hR', f'{os.getuid()}:{os.getgid()}', '/test_input'], check=True)
 
 
 if __name__ == '__main__':
