@@ -2,7 +2,7 @@ data:
   connectorType: destination
   connectorSubtype: database
   definitionId: 1a3ce4df-2899-568c-bc67-2437ddf97cc7
-  dockerImageTag: 0.1.1
+  dockerImageTag: 0.1.2
   dockerRepository: ghcr.io/redislabs-solution-architects/destination-redis-adbc
   documentationUrl: https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector
   githubIssueLabel: destination-redis-adbc
