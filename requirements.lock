@@ -1,6 +1,7 @@
 # Resolved with Python 3.12.12; regenerate from a tested runtime image.
 adbc-driver-flightsql==1.13.0
 adbc-driver-manager==1.13.0
+adbc-driver-redis==0.0.19
 airbyte-cdk==7.45.0
 airbyte_protocol_models_dataclasses==0.17.1
 annotated-types==0.8.0

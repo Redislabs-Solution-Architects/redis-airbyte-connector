@@ -169,6 +169,26 @@ def test_connection_modes_share_generic_backend(monkeypatch):
     gateway.assert_called_once_with("grpc+tls://localhost:1234", db_kwargs={"username": "test"}, autocommit=True)
 
 
+def test_default_connection_uses_bundled_native_driver(monkeypatch):
+    import ctypes
+    from pathlib import Path
+
+    from adbc_driver_redis import _driver_path
+
+    monkeypatch.delenv("REDIS_ADBC_LIBRARY", raising=False)
+    library = _driver_path()
+    assert Path(library).is_file()
+    assert ctypes.CDLL(library).AdbcDriverRedisInit
+    manager = Mock()
+    monkeypatch.setattr("source_redis_adbc.backend.dbapi.connect", manager)
+    connect(CONFIG)
+    args = manager.call_args.kwargs
+    assert args["driver"] == library
+    assert args["autocommit"] is True
+    assert args["db_kwargs"]["uri"] == CONFIG["uri"]
+    assert args["db_kwargs"]["adbc.redis.stream_results"] == "true"
+
+
 @pytest.mark.parametrize("config", [
     {}, {"uri": "http://localhost"}, {**CONFIG, "batch_size": 0},
     {**CONFIG, "schemas": []}, {**CONFIG, "database_options": {"uri": "redis://other"}},

@@ -1,0 +1,154 @@
+name: Publish release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish (for example v0.1.1)
+        type: string
+        required: true
+      publish_pypi:
+        description: Publish Python distributions to PyPI
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify release tag and package version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os, re, subprocess, tomllib
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert re.fullmatch(r'v\d+\.\d+\.\d+', tag), 'Expected a stable vX.Y.Z tag'
+          assert tag == f'v{version}', 'Tag must match package version'
+          assert subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip() == subprocess.check_output(['git', 'rev-parse', f'refs/tags/{tag}^{{commit}}']).strip()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
+      - run: pip install -r requirements.lock && pip install build twine pytest==9.2.0
+      - run: python -m build && twine check dist/*
+      - run: pip install --no-deps dist/*.whl && pip check
+      - run: pytest -q -m 'not integration'
+      - name: Smoke test installed wheel outside the checkout
+        working-directory: /tmp
+        run: |
+          source-redis-adbc spec
+          destination-redis-adbc spec
+          python - <<'PY'
+          import ctypes
+          from adbc_driver_redis import _driver_path
+          assert ctypes.CDLL(_driver_path()).AdbcDriverRedisInit
+          PY
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.whl *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+  containers:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: source-redis-adbc
+            target: runtime
+          - image: destination-redis-adbc
+            target: destination
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Registry namespace
+        id: registry
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "namespace=ghcr.io/${OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          load: true
+          tags: connector-smoke:release
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+      - run: docker run --rm connector-smoke:release spec
+      - name: Publish AMD64 and ARM64 images
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.registry.outputs.namespace }}/${{ matrix.image }}:${{ needs.build.outputs.version }}
+            ${{ steps.registry.outputs.namespace }}/${{ matrix.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.build.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+  pypi:
+    needs: build
+    if: github.event_name == 'release' || inputs.publish_pypi
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist
+      - run: rm dist/SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@release/v1
+  release-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist
+      - name: Attach distributions and checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: gh release upload "$RELEASE_TAG" dist/* --clobber

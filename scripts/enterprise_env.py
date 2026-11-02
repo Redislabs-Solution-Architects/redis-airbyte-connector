@@ -23,7 +23,7 @@ IDENTITY = hashlib.sha256(str(ROOT).encode()).hexdigest()[:10]
 NAME = "airbyte-enterprise-" + IDENTITY
 LABEL = "io.airbyte.enterprise-test"
 IMAGE = "redislabs/redis:8.2.0-78.18"
-TEST_IMAGE = "source-redis-adbc-enterprise-test:0.1.0"
+TEST_IMAGE = "source-redis-adbc-enterprise-test:0.1.1"
 
 
 def command(*args, stdin=None):
@@ -271,12 +271,12 @@ def test():
 
 def e2e():
     verify()
-    image = "source-redis-adbc-enterprise:0.1.0"
+    image = "source-redis-adbc-enterprise:0.1.1"
     subprocess.run(["docker", "build", "--target", "runtime", "-t", image, str(ROOT)], check=True)
     environment = {**os.environ, "REDIS_ENTERPRISE_CONFIG": str(DIRECTORY / "config.json")}
     subprocess.run([os.sys.executable, str(ROOT / "scripts/e2e.py"), "--source-image", image,
         "--network", NAME, "--tls-directory", str(DIRECTORY)], env=environment, check=True)
-    destination = "destination-redis-adbc-enterprise:0.1.0"
+    destination = "destination-redis-adbc-enterprise:0.1.1"
     subprocess.run(["docker", "build", "--target", "destination", "-t", destination, str(ROOT)], check=True)
     subprocess.run([os.sys.executable, str(ROOT / "scripts/e2e_redis.py"), "--source-image", image,
         "--destination-image", destination, "--network", NAME, "--tls-directory", str(DIRECTORY)],

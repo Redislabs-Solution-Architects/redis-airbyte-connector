@@ -46,8 +46,12 @@ def connect(config):
         "adbc.redis.stream_results": "true",
         "adbc.redis.stream_batch_rows": str(config.get("batch_size", 1024)),
     })
+    if not os.environ.get("REDIS_ADBC_LIBRARY"):
+        from adbc_driver_redis import dbapi as redis
+
+        return redis.connect(config["uri"], db_kwargs=options, autocommit=True)
     return dbapi.connect(
-        driver=os.environ.get("REDIS_ADBC_LIBRARY", "/usr/local/lib/libadbc_driver_redis.so"),
+        driver=os.environ["REDIS_ADBC_LIBRARY"],
         entrypoint="AdbcDriverRedisInit", db_kwargs=options, autocommit=True,
     )
 

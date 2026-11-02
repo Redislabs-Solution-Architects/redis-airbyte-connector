@@ -24,10 +24,10 @@ jobs:
           cache-dependency-path: requirements.lock
       - run: pip install -r requirements.lock && pip install --no-deps -e . && pip install pytest==9.2.0
       - run: pytest -q -m 'not integration'
-      - run: docker build --target runtime -t source-redis-adbc:0.1.0 .
-      - run: docker run --rm source-redis-adbc:0.1.0 spec
-      - run: docker build --target destination -t destination-redis-adbc:0.1.0 .
-      - run: docker run --rm destination-redis-adbc:0.1.0 spec
+      - run: docker build --target runtime -t source-redis-adbc:0.1.1 .
+      - run: docker run --rm source-redis-adbc:0.1.1 spec
+      - run: docker build --target destination -t destination-redis-adbc:0.1.1 .
+      - run: docker run --rm destination-redis-adbc:0.1.1 spec
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
         name: Provision TLS Redis Enterprise test environment
         run: python scripts/enterprise_env.py up
