@@ -17,8 +17,8 @@ from integration_config import enterprise_config
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-image", default="source-redis-adbc:0.1.2")
-    parser.add_argument("--destination-image", default="destination-redis-adbc:0.1.2")
+    parser.add_argument("--source-image", default="source-redis-adbc:0.1.3")
+    parser.add_argument("--destination-image", default="destination-redis-adbc:0.1.3")
     parser.add_argument("--network", default=os.environ.get("REDIS_ENTERPRISE_NETWORK"))
     parser.add_argument("--tls-directory", type=Path)
     args = parser.parse_args()
