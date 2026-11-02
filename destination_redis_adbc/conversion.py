@@ -1,6 +1,7 @@
 """Strict JSON-schema mapping for typed ADBC bulk ingestion."""
 
 import base64
+from copy import deepcopy
 import re
 from dataclasses import dataclass
 from datetime import date
@@ -78,6 +79,7 @@ class RecordConverter:
     def __init__(self, schema):
         try:
             jsonschema.Draft7Validator.check_schema(schema)
+            schema = _nullable_optional_fields(schema)
             self.root = column("record", schema)
             if self.root.kind != "object":
                 raise ConnectorError("Destination stream schemas must be objects with explicit properties.")
@@ -105,6 +107,30 @@ class RecordConverter:
             raise ConnectorError(
                 "A record does not match the destination schema or cannot be represented without truncation."
             ) from None
+
+
+def _nullable_optional_fields(schema):
+    """Airbyte's normalized catalogs can omit null unions on optional fields.
+
+    Missing optional values already become SQL NULL. Accept their explicit NULL
+    representation too, while preserving required-field and array-item rules.
+    """
+    schema = deepcopy(schema)
+
+    def visit(node):
+        required = set(node.get("required", []))
+        for name, child in node.get("properties", {}).items():
+            kinds = child.get("type")
+            if name not in required and kinds:
+                kinds = [kinds] if isinstance(kinds, str) else list(kinds)
+                if "null" not in kinds:
+                    child["type"] = [*kinds, "null"]
+            visit(child)
+        if isinstance(node.get("items"), dict):
+            visit(node["items"])
+
+    visit(schema)
+    return schema
 
 
 def _convert(col, value):

@@ -18,7 +18,9 @@ and publishing. It requires:
    destination/source/destination round trip against those candidate images.
 4. A disposable Airbyte platform: register both custom definitions, check both
    connectors, discover streams, run actual sync jobs, repeat Overwrite, and
-   compare the final Redis data. The platform loads the saved AMD64 images.
+   compare the final Redis data. Airbyte 1.8.5
+   configurations omit unused empty secret objects to avoid its secret-hydration
+   failure for an empty `database_options` object. The platform loads the saved AMD64 images.
 5. For releases, install and load each native wheel outside the checkout.
    Linux wheels reuse the native library extracted from the tested images;
    macOS ARM64 builds the same pinned upstream revision.

@@ -106,3 +106,19 @@ def test_large_number_cannot_be_silently_rounded():
     c = converter({"value": {"type": "number"}})
     with pytest.raises(ConnectorError, match="precision"):
         c.record({"value": 2**60 + 1})
+
+
+def test_platform_catalog_optional_fields_accept_explicit_nulls():
+    # The platform's fields-based catalog can turn [null, string] into string
+    # plus required=false before the destination receives its JSON catalog.
+    c = converter({'label': {'type': 'string'}, 'amount': {'type': 'string'},
+                   'nested': {'type': 'object', 'properties': {'count': {'type': 'integer'}}}})
+    row = c.record({'label': None, 'amount': None, 'nested': {'count': None}})
+    assert pa.RecordBatch.from_pylist([row], schema=c.arrow_schema).to_pylist() == [row]
+
+
+def test_optional_field_nullability_does_not_relax_array_item_types():
+    c = converter({'items': {'type': 'array', 'items': {'type': 'integer'}}})
+    assert c.record({'items': None}) == {'items': None}
+    with pytest.raises(ConnectorError):
+        c.record({'items': [None]})

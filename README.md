@@ -178,7 +178,9 @@ represents 64-bit integers and decimals as exact strings, so feeding its output
 into this destination preserves those strings in VARCHAR columns. It does not
 guess that numeric-looking strings should become SQL numbers. Date/time casts
 fail outside Arrow's representable range; they do not silently truncate.
-Required/null constraints are validated. Unknown fields, ambiguous unions,
+Required/null constraints are validated. Optional destination fields accept both
+missing and explicit NULL values, including platform-normalized catalogs that
+omit the null type union. Array item nullability remains explicit. Unknown fields, ambiguous unions,
 dynamic objects, tuple arrays and the driver's reserved `__key` column fail
 explicitly. Append requires the existing field names/types to match; schema
 evolution requires an explicit migration. Deduplication and CDC are unsupported.
