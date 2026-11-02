@@ -5,9 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       end_to_end:
-        description: Run disposable PostgreSQL and Redis read/write sync tests
+        description: Run TLS Redis Enterprise source and destination tests
         type: boolean
         default: false
+      flight_image:
+        description: Optional Enterprise-capable Redis Flight SQL image accessible to the runner
+        type: string
+        default: ''
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -25,11 +29,25 @@ jobs:
       - run: docker build --target destination -t destination-redis-adbc:0.1.0 .
       - run: docker run --rm destination-redis-adbc:0.1.0 spec
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        run: python scripts/e2e.py
-        timeout-minutes: 20
+        name: Provision TLS Redis Enterprise test environment
+        run: python scripts/enterprise_env.py up
+        timeout-minutes: 10
+      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end && inputs.flight_image != '' }}
+        name: Provision authenticated TLS Flight SQL gateway
+        env:
+          FLIGHT_IMAGE: ${{ inputs.flight_image }}
+        run: |
+          docker pull "$FLIGHT_IMAGE"
+          python scripts/enterprise_env.py gateway --flight-image "$FLIGHT_IMAGE"
       - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        run: python scripts/e2e_redis.py
+        name: Run Enterprise integration and destination tests
+        run: |
+          python scripts/enterprise_env.py test
+          python scripts/enterprise_env.py e2e
         timeout-minutes: 20
-      - if: ${{ github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
-        run: bash scripts/test-flight-sql.sh
-        timeout-minutes: 15
+      - if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.end_to_end }}
+        name: Remove test environment
+        run: |
+          if test -f secrets/enterprise-test/state.json; then
+            python scripts/enterprise_env.py down
+          fi

@@ -98,9 +98,9 @@ ADBC Flight SQL database options (for example `username` and `password`). The
 same metadata, conversion and full-refresh implementation is used. The gateway
 must support ADBC GetObjects, GetTableSchema, autocommit, SQL SELECT and batch
 streaming. Redis Search is the gateway operator's responsibility. A gateway is
-not bundled. The generic path is tested against Apache Arrow Go's pinned
-SQLite reference Flight SQL server. A deployed Redis-backed gateway, TLS and
-authentication must still be validated for that deployment. Gateways without
+not bundled. Integration tests require a Redis-backed gateway with TLS and
+username/password authentication; the test writes a unique table through native
+ADBC and reads it through the gateway to verify the backing database. Gateways without
 database schemas can use `"schemas": [""]`.
 
 ```sh
@@ -185,10 +185,11 @@ indexes; it is intended for dedicated destination tables, not application tables
 The destination is direct Redis ADBC only. A production Flight SQL write path
 and full Airbyte platform job orchestration remain unvalidated.
 
-Run the complete destination/source/destination CLI round trip:
+Run both destination CLI round trips against the local Enterprise environment
+created below:
 
 ```sh
-python3 scripts/e2e_redis.py
+python3 scripts/enterprise_env.py e2e
 ```
 
 ## Development and validation
@@ -202,24 +203,102 @@ docker run --rm source-redis-adbc-test:0.1.0 -m 'not integration'
 ```
 
 For local Python use, set `REDIS_ADBC_LIBRARY` to a built native shared library.
-Native tests require a dedicated, disposable Search-enabled Redis database:
+All integration tests require a dedicated, disposable Redis Enterprise cluster
+(Redis Software or Redis Cloud) with Search, TLS enabled, and a database username
+and password. Create the local environment with Python 3.11+, Docker, and OpenSSL:
 
 ```sh
-REDIS_URI='redis://localhost:12000/0' \
-REDIS_ADBC_LIBRARY=/absolute/path/libadbc_driver_redis.so \
-.venv/bin/pytest -m integration
+python3 scripts/enterprise_env.py up
+python3 scripts/enterprise_env.py test
+python3 scripts/enterprise_env.py e2e
 ```
 
-The integration fixture creates and drops its own uniquely named SQL tables.
-Run the complete disposable destination test with:
+This creates a separate single-node Enterprise development cluster with two
+shards, Search, QPF 4x, noeviction, and a dedicated database user. The default
+user is disabled. Management and database ports bind only to localhost on
+random ports. Generated passwords, a 30-day test CA, certificates, configurations,
+and verification evidence are kept under ignored `secrets/enterprise-test/`.
+The native and destination test commands build their pinned connector images.
+Docker must have sufficient memory for Enterprise and the destination JVM.
+
+To include Flight SQL, supply an existing Enterprise-capable
+[Redis Flight SQL server](https://github.com/redis/redis-apache-arrow-flight)
+image supporting TLS and Redis ACL authentication:
+
+```sh
+python3 scripts/enterprise_env.py gateway --flight-image YOUR_FLIGHT_IMAGE
+python3 scripts/enterprise_env.py test
+```
+
+The gateway uses the same database user, validates the Enterprise CA, serves
+TLS with a trusted test certificate, and authenticates clients against Redis.
+Its exact local image ID is recorded in `state.json`. The image must include
+support for authenticated TLS Redis connections. The `test` action runs all
+seven integration tests when a gateway configuration exists, or the six native
+source/destination tests otherwise. No test starts a plaintext Redis or SQLite substitute.
+
+```sh
+python3 scripts/enterprise_env.py verify  # TLS, credentials, Search and QPF checks
+python3 scripts/enterprise_env.py down    # remove owned containers/network/secrets
+```
+
+The environment remains running until `down`. Certificates expire after 30 days;
+recreate it with `down` then `up`. This is a single-node development cluster;
+it does not exercise multi-node failover. `config.json` uses Docker DNS and
+`/enterprise-test/ca.crt`; `host.json` uses localhost and the host's CA path for
+native clients. The scripts mount and select these paths automatically.
+
+To use an existing Enterprise deployment instead, configure QPF 4x where
+available and provide your own configuration below.
+
+Create `secrets/redis.json` (URL-encode credentials):
+
+```json
+{"uri": "rediss://integration-user:URL_ENCODED_PASSWORD@enterprise.example.com:12000/0?read_timeout=30s&write_timeout=30s"}
+```
+
+Use a trusted server certificate and configure the driver's CA options in
+`database_options` when your cluster uses a private CA. Certificate paths must be
+accessible to the process running the driver, including inside containers.
+The test configuration asserts your choice of Enterprise deployment; it does
+not identify the server edition from its URI. Tests reject plaintext URIs and
+missing username/password credentials before connecting.
+
+```sh
+export REDIS_ENTERPRISE_CONFIG="$PWD/secrets/redis.json"
+export REDIS_ADBC_LIBRARY=/absolute/path/libadbc_driver_redis.so
+.venv/bin/python -m pytest tests/test_integration.py
+```
+
+For Flight SQL, also create `secrets/flight.json` pointing to a gateway backed by
+the **same** Enterprise database:
+
+```json
+{"uri": "grpc+tls://gateway.example.com:31337", "connection_type": "flight_sql", "database_options": {"username": "integration-user", "password": "PASSWORD"}}
+```
+
+```sh
+export FLIGHT_SQL_CONFIG="$PWD/secrets/flight.json"
+.venv/bin/python -m pytest -m integration
+```
+
+Explicit integration runs fail when required configuration is absent. Unit tests
+remain runnable with `-m 'not integration'`. Native and gateway fixtures create
+and drop unique SQL tables. Run the complete destination test with:
 
 ```sh
 python3 scripts/e2e.py
 ```
 
-This starts Redis Software with Search and QPF 4x and PostgreSQL 16.10, runs
-the source CLI through `airbyte/destination-postgres:3.0.23` (pinned by digest),
-verifies actual loaded data, then repeats Overwrite to check replay behavior.
-It removes its containers and private network on exit. Allow several minutes
-for Software bootstrap and destination startup. See
-`docs/validation.md` for results and remaining validation boundaries.
+This uses the configured Enterprise cluster over authenticated TLS, starts
+PostgreSQL 16.10, runs the source CLI through
+`airbyte/destination-postgres:3.0.23` (pinned by digest), verifies loaded data,
+and repeats Overwrite to check replay behavior. The Enterprise endpoint must
+be reachable from Docker. Containers and the private network are removed on
+exit. The Enterprise cluster is externally managed; use a disposable database
+and test tables are dropped on exit when the cluster remains reachable.
+
+The manual CI integration job provisions this environment automatically. Its
+optional `flight_image` input adds a gateway from an image accessible to the CI
+runner; without it, CI runs native integration and destination tests.
+See `docs/validation.md` for historical results and validation boundaries.

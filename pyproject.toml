@@ -31,4 +31,5 @@ destination_redis_adbc = ["spec.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: requires a running Redis Search server and native ADBC library"]
+pythonpath = ["."]
+markers = ["integration: requires a disposable Redis Enterprise cluster with TLS, username/password authentication, Search, and native ADBC library"]
