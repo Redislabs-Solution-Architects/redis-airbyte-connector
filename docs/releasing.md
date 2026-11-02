@@ -46,6 +46,8 @@ git push origin vX.Y.Z
 The publishing workflow verifies the tag and that its commit belongs to `main`,
 then creates or retains a **draft** GitHub release. After every gate passes it:
 
+- Checks existing PyPI files and both combined and architecture-specific
+  container tags for conflicting bytes before starting registry uploads.
 - Publishes immutable Python distributions using PyPI Trusted Publishing.
 - Pushes the tested architecture images and creates the versioned manifests.
 - Attaches the distributions and checksums without overwriting different bytes.
@@ -75,6 +77,8 @@ gh workflow run publish.yml --ref YOUR_BRANCH -f publish=false
 
 To resume a tagged draft release, dispatch its existing tag with `publish=true`.
 An already public release cannot be silently republished.
+Tag-triggered and manual publication for the same version share a concurrency
+lock so they cannot race each other.
 
 ## Local checks
 

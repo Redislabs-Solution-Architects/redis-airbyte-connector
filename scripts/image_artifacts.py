@@ -58,7 +58,9 @@ def main():
         if args.action == 'publish':
             if not all((args.namespace, args.version, args.arch)):
                 parser.error('Publishing requires --namespace, --version and --arch')
-            from release import image_config
+            from release import check_image_identity, image_config
+            for kind in IMAGES:
+                check_image_identity(kind + '-redis-adbc', args.version, args.arch, manifest['images'][kind])
             for kind, image in IMAGES.items():
                 existing = image_config(kind + '-redis-adbc', f'{args.version}-{args.arch}', args.arch)
                 if existing is not None:

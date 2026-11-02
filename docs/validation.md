@@ -5,7 +5,7 @@
 Validated on November 1, 2026, in the release-validation branch, without changing
 the published 0.1.1 artifacts:
 
-- 123 unit/CLI tests passed; metadata checks, actionlint, source-distribution
+- 126 unit/CLI tests passed; metadata checks, actionlint, source-distribution
   build and `twine check` passed.
 - Six native authenticated TLS Enterprise tests passed against the candidate
   images. Both PostgreSQL syncs and the Redis CLI round trip passed, including

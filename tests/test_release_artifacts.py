@@ -44,3 +44,15 @@ def test_final_verification_requires_every_distribution_on_pypi(tmp_path, monkey
     monkeypatch.setattr(release, 'pypi', lambda version: None)
     with pytest.raises(RuntimeError, match='missing'):
         release.check_pypi(tmp_path, '0.1.2', require_all=True)
+
+
+@pytest.mark.parametrize('conflict', ['0.1.2', '0.1.2-amd64'])
+def test_conflicting_combined_or_architecture_tag_prevents_publication(monkeypatch, conflict):
+    monkeypatch.setattr(release, 'image_config', lambda name, ref, arch: 'sha256:other' if ref == conflict else None)
+    with pytest.raises(RuntimeError, match='use a new version'):
+        release.check_image_identity('source-redis-adbc', '0.1.2', 'amd64', 'sha256:tested')
+
+
+def test_matching_existing_image_allows_retry(monkeypatch):
+    monkeypatch.setattr(release, 'image_config', lambda *args: 'sha256:tested')
+    release.check_image_identity('source-redis-adbc', '0.1.2', 'amd64', 'sha256:tested')

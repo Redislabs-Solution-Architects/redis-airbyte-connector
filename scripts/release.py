@@ -78,9 +78,23 @@ def image_config(name, reference, arch):
     return manifest['config']['digest']
 
 
+def check_image_identity(name, version, arch, expected):
+    for reference in (version, f'{version}-{arch}'):
+        existing = image_config(name, reference, arch)
+        if existing is not None and existing != expected:
+            raise RuntimeError(f'Versioned image {name}:{reference} already differs; use a new version')
+
+
+def check_images(identities, version):
+    for arch in ('amd64', 'arm64'):
+        images = json.loads((identities / f'image-identities-{arch}/images.json').read_text())['images']
+        for kind, expected in images.items():
+            check_image_identity(kind + '-redis-adbc', version, arch, expected)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'check-pypi', 'check-images', 'assets', 'finalize'))
+    parser.add_argument('action', choices=('prepare', 'preflight', 'check-pypi', 'check-images', 'assets', 'finalize'))
     parser.add_argument('--tag', default='')
     parser.add_argument('--publish', action='store_true')
     parser.add_argument('--directory', type=Path, default=Path('dist'))
@@ -106,14 +120,15 @@ def main():
                         '--draft', '--title', tag, '--generate-notes')
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
             output.write(f'version={version}\npublish={str(args.publish).lower()}\n')
+    elif args.action == 'preflight':
+        check_pypi(args.directory, version)
+        check_images(args.identities, version)
     elif args.action == 'check-pypi':
         check_pypi(args.directory, version)
     elif args.action == 'check-images':
         manifest = json.loads((args.directory / 'images.json').read_text())
         for kind, expected in manifest['images'].items():
-            existing = image_config(kind + '-redis-adbc', f'{version}-{args.arch}', args.arch)
-            if existing is not None and existing != expected:
-                raise RuntimeError('A versioned container tag already contains different bytes; use a new version')
+            check_image_identity(kind + '-redis-adbc', version, args.arch, expected)
     elif args.action == 'assets':
         release = json.loads(command('gh', 'release', 'view', tag, '--repo', REPO, '--json', 'assets'))
         existing = {asset['name']: asset['digest'] for asset in release['assets']}

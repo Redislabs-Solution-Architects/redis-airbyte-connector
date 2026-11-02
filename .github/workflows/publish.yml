@@ -15,7 +15,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: publish-${{ inputs.tag || github.ref }}
+  group: publish-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 jobs:
   prepare:
@@ -69,7 +69,7 @@ jobs:
         with:
           name: distributions
           path: dist/
-  pypi-preflight:
+  publication-preflight:
     needs: [prepare, distributions]
     if: needs.prepare.outputs.publish == 'true'
     runs-on: ubuntu-latest
@@ -84,9 +84,13 @@ jobs:
         with:
           name: distributions
           path: dist
-      - run: python scripts/release.py check-pypi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-identities-*
+          path: identities
+      - run: python scripts/release.py preflight --identities identities
   pypi:
-    needs: pypi-preflight
+    needs: publication-preflight
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -101,7 +105,7 @@ jobs:
         with:
           skip-existing: true
   containers:
-    needs: [prepare, validate]
+    needs: [prepare, publication-preflight]
     if: needs.prepare.outputs.publish == 'true'
     strategy:
       fail-fast: false
