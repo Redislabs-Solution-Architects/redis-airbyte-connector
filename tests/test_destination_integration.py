@@ -1,5 +1,4 @@
 import json
-import os
 import uuid
 from contextlib import closing
 
@@ -10,6 +9,7 @@ from airbyte_cdk.models import (
     Status,
 )
 
+from scripts.integration_config import enterprise_config
 from destination_redis_adbc.destination import DestinationRedisAdbc
 from destination_redis_adbc.protocol import message_to_json
 from source_redis_adbc.backend import ConnectorError, connect, quote
@@ -32,10 +32,7 @@ PROPERTIES = {
 
 @pytest.fixture
 def destination_config():
-    uri = os.environ.get("REDIS_URI")
-    if not uri:
-        pytest.skip("Set REDIS_URI to a disposable Redis Software Search database")
-    config = {"uri": uri, "schema": "airbyte_dest_" + uuid.uuid4().hex[:12], "batch_size": 2}
+    config = {**enterprise_config(), "schema": "airbyte_dest_" + uuid.uuid4().hex[:12]}
     try:
         yield config
     finally:
@@ -82,7 +79,7 @@ def state(n):
 
 def read_back(config):
     source = SourceRedisAdbc()
-    source_config = {"uri": config["uri"], "schemas": [config["schema"]], "batch_size": 2}
+    source_config = {"uri": config["uri"], "database_options": config.get("database_options", {}), "schemas": [config["schema"]], "batch_size": 2}
     discovered = source.discover(None, source_config)
     stream = next(s for s in discovered.streams if s.name == "items")
     catalog = ConfiguredAirbyteCatalogSerializer.load(
@@ -154,7 +151,7 @@ def test_failed_overwrite_preserves_prior_data_and_cleans_stage(destination_conf
         next(gen)
     assert [row["id"] for row in read_back(config)] == ["99"]
     source = SourceRedisAdbc()
-    names = [s.name for s in source.discover(None, {"uri": config["uri"], "schemas": [config["schema"]]}).streams]
+    names = [s.name for s in source.discover(None, {"uri": config["uri"], "database_options": config.get("database_options", {}), "schemas": [config["schema"]]}).streams]
     assert names == ["items"]
     # Retry a complete overwrite and confirm the final target replaces old data.
     acks = list(destination.write(config, configured("overwrite"), [message(1), state(1), message(2), state(2)]))

@@ -29,6 +29,7 @@ FROM runtime AS test
 USER root
 RUN pip install --no-cache-dir 'pytest==9.2.0'
 COPY tests ./tests
+COPY scripts/integration_config.py ./scripts/integration_config.py
 ENV PYTEST_ADDOPTS="-o cache_dir=/tmp/pytest-cache"
 USER connector
 ENTRYPOINT ["python", "-m", "pytest"]

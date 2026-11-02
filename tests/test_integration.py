@@ -1,4 +1,3 @@
-import os
 import uuid
 from contextlib import closing
 
@@ -7,6 +6,7 @@ from airbyte_cdk.models import ConfiguredAirbyteCatalogSerializer, Status
 
 from source_redis_adbc.backend import AdbcBackend, connect, quote
 from source_redis_adbc.source import SourceRedisAdbc
+from scripts.integration_config import enterprise_config
 
 
 pytestmark = pytest.mark.integration
@@ -14,10 +14,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def seeded():
-    uri = os.environ.get("REDIS_URI")
-    if not uri:
-        pytest.skip("Set REDIS_URI to a disposable Redis Search database")
-    config = {"uri": uri, "batch_size": 2}
+    config = enterprise_config()
     name = "airbyte_it_" + uuid.uuid4().hex[:12]
     with closing(connect(config)) as connection, closing(connection.cursor()) as cursor:
         cursor.execute(f'CREATE TABLE {quote(name)} (id BIGINT, label VARCHAR, amount DECIMAL(30,9))')

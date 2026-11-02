@@ -1,5 +1,29 @@
 # Validation record
 
+The current authenticated TLS environment was validated on November 1, 2026:
+
+- Unit suite: 102 tests passed.
+- `python3 scripts/enterprise_env.py test`: all 7 integration tests passed
+  (3 native source, 3 native destination and 1 Flight SQL), against the same Enterprise database.
+- `python3 scripts/enterprise_env.py e2e`: both destination syncs passed;
+  all 5 rows and the empty stream were verified in PostgreSQL after each sync.
+  The Redis destination/source/destination CLI round trip also passed, including
+  exact value/state preservation, failed Overwrite, retry and empty Overwrite.
+- Environment checks passed: CA-verified management and database TLS, named-user
+  authentication, default user disabled, two database shards, Search, QPF 4x,
+  noeviction, rejection of plaintext, missing authentication, incorrect
+  passwords, and an untrusted CA.
+
+The fixture uses `redislabs/redis:8.2.0-78.18` on a single development node with
+2 GB database memory and no replication. The Flight SQL test used the locally
+available Enterprise-capable image
+`sha256:14f074a4bf66d5c7caaec9b9bb6111c8cf5f9601aa1e1792c76ab86e9c31a0b9`.
+Generated configuration and verification evidence live in the ignored
+`secrets/enterprise-test/` directory; they contain credentials and are not
+committed. See the README for recreation and teardown commands.
+
+The results below describe the earlier setup and are retained as history.
+
 Validated on November 1, 2026, on Docker Desktop, Linux ARM64 containers.
 
 ## Components
@@ -104,8 +128,8 @@ validated.
 
 ## Remaining boundaries
 
-Redis-backed production Flight SQL gateways, Flight TLS/authentication, deployed
-Redis Cloud TLS/ACL combinations, destination outage mid-write and platform job
+Other production Flight SQL gateways, deployed Redis Cloud TLS/ACL combinations,
+multi-node failover, destination outage mid-write and platform job
 cancellation/retry orchestration require deployment-specific validation. The
 connector is full-refresh only, with no snapshot isolation, CDC, persistent
 checkpoint, native Arrow transport or performance claim. Concurrent writes and

@@ -1,5 +1,5 @@
 {
-  "uri": "redis://host.docker.internal:12000/0?read_timeout=30s&write_timeout=30s",
+  "uri": "rediss://integration-user:URL_ENCODED_PASSWORD@enterprise.example.com:12000/0?read_timeout=30s&write_timeout=30s",
   "schema": "airbyte",
   "use_stream_namespace": false,
   "batch_size": 1024,

@@ -1,47 +1,37 @@
 #!/usr/bin/env python3
 """Airbyte records -> Redis destination -> Redis source -> Redis destination.
 
-Runs on one disposable Redis Software/Search server. No cloud credentials.
+Requires REDIS_ENTERPRISE_CONFIG for a disposable TLS Enterprise database.
 """
 
 import argparse
 import json
+import os
 import tempfile
 import uuid
 from pathlib import Path
 
-from e2e import SOFTWARE, bootstrap, docker, messages
+from e2e import docker, messages
+from integration_config import enterprise_config
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-image", default="source-redis-adbc:0.1.0")
     parser.add_argument("--destination-image", default="destination-redis-adbc:0.1.0")
+    parser.add_argument("--network", default=os.environ.get("REDIS_ENTERPRISE_NETWORK"))
+    parser.add_argument("--tls-directory", type=Path)
     args = parser.parse_args()
+    config = enterprise_config()
     token = uuid.uuid4().hex[:10]
-    network = "airbyte-rw-" + token
-    redis = network + "-redis"
-    docker("network", "create", network)
+    network = args.network or "airbyte-rw-" + token
+    if not args.network:
+        docker("network", "create", network)
     try:
-        docker(
-            "run",
-            "-d",
-            "--name",
-            redis,
-            "--network",
-            network,
-            "--cap-add",
-            "SYS_RESOURCE",
-            "-p",
-            "127.0.0.1::9443",
-            SOFTWARE,
-        )
-        print("Bootstrapping isolated Redis Software/Search for read/write round trips...", flush=True)
-        bootstrap(redis)
         with tempfile.TemporaryDirectory(prefix="airbyte-rw-") as directory:
             folder = Path(directory)
             folder.chmod(0o755)
-            dest = {"uri": f"redis://{redis}:12000/0", "schema": "airbyte_ingest", "batch_size": 2}
+            dest = {**config, "schema": "airbyte_ingest_" + token}
             (folder / "destination.json").write_text(json.dumps(dest))
             props = {
                 "id": {"type": "integer"},
@@ -72,6 +62,9 @@ def main():
             (folder / "catalog.json").write_text(json.dumps(catalog))
             base = ["run", "--rm", "--network", network, "-v", f"{directory}:/config:ro"]
 
+            if args.tls_directory:
+                base.extend(["-v", f"{args.tls_directory.resolve()}:/enterprise-test:ro"])
+
             def write(wire, cat="catalog.json", config="destination.json", check=True):
                 return docker(
                     *base,
@@ -88,7 +81,7 @@ def main():
 
             def read(schema):
                 (folder / "source.json").write_text(
-                    json.dumps({"uri": dest["uri"], "schemas": [schema], "batch_size": 2})
+                    json.dumps({**config, "schemas": [schema]})
                 )
                 discovery = messages(
                     docker(*base, args.source_image, "discover", "--config", "/config/source.json").stdout
@@ -154,7 +147,7 @@ def main():
             assert by_id["2"]["items"] == ["1", None, "3"]
 
             # Feed the source's actual wire records and discovered schema to a second destination schema.
-            copied = {**dest, "schema": "airbyte_copy"}
+            copied = {**dest, "schema": "airbyte_copy_" + token}
             (folder / "copy.json").write_text(json.dumps(copied))
             (folder / "copy_catalog.json").write_text(json.dumps(source_catalog))
             global_state = {
@@ -186,8 +179,18 @@ def main():
             assert read(dest["schema"])[1] == []
             print("PASS: failed Overwrite preserves old data; retry and empty Overwrite succeed.", flush=True)
     finally:
-        docker("rm", "-f", redis, check=False)
-        docker("network", "rm", network, check=False)
+        cleanup = f'''import json
+from contextlib import closing
+from source_redis_adbc.backend import connect
+with closing(connect(json.load(open('/enterprise-test/config.json')))) as c, closing(c.cursor()) as cur:
+    cur.execute('DROP SCHEMA IF EXISTS airbyte_ingest_{token} CASCADE')
+    cur.execute('DROP SCHEMA IF EXISTS airbyte_copy_{token} CASCADE')
+'''
+        if args.tls_directory:
+            docker("run", "--rm", "--network", network, "-v", f"{args.tls_directory.resolve()}:/enterprise-test:ro",
+                   "-i", "--entrypoint", "python", args.source_image, "-", stdin=cleanup, check=False)
+        if not args.network:
+            docker("network", "rm", network, check=False)
 
 
 if __name__ == "__main__":
