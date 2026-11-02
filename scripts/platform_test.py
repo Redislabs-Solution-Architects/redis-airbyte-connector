@@ -39,7 +39,7 @@ class API:
             print('Airbyte ' + path.split('?')[0], flush=True)
         return self._request(path, body, method, public)
 
-    def _request(self, path, body, method='POST', public=False):
+    def _request(self, path, body, method='POST', public=False, refresh=True):
         headers = {'Content-Type': 'application/json'}
         if self.token:
             headers['Authorization'] = 'Bearer ' + self.token
@@ -53,6 +53,10 @@ class API:
             # Platform errors can contain the complete connector configuration.
             code = error.code
             error.close()
+            if code == 401 and refresh and self.token and path != 'applications/token':
+                self.token = None
+                self.token = self._request('applications/token', self.credentials, refresh=False)['access_token']
+                return self._request(path, body, method, public, refresh=False)
             raise RuntimeError(f'Airbyte {path} failed (HTTP {code})') from None
 
     def job(self, job_id, expected='succeeded', timeout=600):
@@ -85,6 +89,10 @@ def main():
     parser.add_argument('--output', type=Path, default=Path('platform-evidence.json'))
     args = parser.parse_args()
     enterprise.verify()
+    deployment = json.loads(docker('exec', NODE, 'kubectl', '--kubeconfig', '/etc/kubernetes/admin.conf',
+        '-n', NAMESPACE, 'get', 'deployment', 'airbyte-abctl-server', '-o', 'json'))
+    server_image = deployment['spec']['template']['spec']['containers'][0]['image']
+    assert server_image.endswith(':2.0.1'), 'Expected the pinned Airbyte 2.0.1 platform'
     import_images([args.source_image, args.destination_image])
     networks = json.loads(docker('inspect', NODE))[0]['NetworkSettings']['Networks']
     if enterprise.NAME not in networks:
@@ -124,7 +132,7 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
     api = API(args.api_url)
     workspace = api('workspaces', method='GET', public=True)['data'][0]['workspaceId']
     ids = {}
-    evidence = {'platform_version': '2.0.1', 'jobs': [], 'images': {name: docker('image', 'inspect', image, '--format', '{{.Id}}')
+    evidence = {'platform_version': '2.0.1', 'server_image': server_image, 'jobs': [], 'images': {name: docker('image', 'inspect', image, '--format', '{{.Id}}')
                                       for name, image in [('source', args.source_image), ('destination', args.destination_image)]}}
     try:
         for kind, image, cfg in [('source', args.source_image, source_config), ('destination', args.destination_image, destination_config)]:
@@ -166,6 +174,19 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
         (folder / 'verify.py').write_text(verification)
         subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
                         '--entrypoint', 'python', args.source_image, '/platform/verify.py'], check=True)
+        cancel_id = api('connections/sync', {'connectionId': ids['connection']})['job']['id']
+        api('jobs/cancel', {'id': cancel_id})
+        api.job(cancel_id, expected='cancelled')
+        evidence['jobs'].append({'id': cancel_id, 'status': 'cancelled', 'scope': 'queued job'})
+        # Cancellation must leave the previous published target readable.
+        subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
+                        '--entrypoint', 'python', args.source_image, '/platform/verify.py'], check=True)
+        retry_id = api('connections/sync', {'connectionId': ids['connection']})['job']['id']
+        api.job(retry_id)
+        evidence['jobs'].append({'id': retry_id, 'status': 'succeeded', 'scope': 'manual restart after cancellation'})
+        subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
+                        '--entrypoint', 'python', args.source_image, '/platform/verify.py'], check=True)
+        print('Platform queued-job cancellation preserved the target; manual restart succeeded.', flush=True)
         evidence['verified_rows'] = 5
         args.output.write_text(json.dumps(evidence, indent=2) + '\n')
     finally:

@@ -5,6 +5,15 @@ import json
 from airbyte_cdk.models import AirbyteMessageSerializer, Type
 
 
+def load_message(wire):
+    message = AirbyteMessageSerializer.load(wire)
+    if message.type == Type.STATE and message.state is not None:
+        # The CDK model omits platform envelope fields such as the checkpoint id.
+        # Keep the entire envelope, including future fields, for acknowledgement.
+        message._original_state = wire["state"]
+    return message
+
+
 def _blob(value):
     return value if isinstance(value, dict) else vars(value)
 
@@ -28,6 +37,9 @@ def message_to_json(message):
     if message.type == Type.STATE:
         state = message.state
         validate_state(state)
+        if hasattr(message, "_original_state"):
+            wire["state"] = message._original_state
+            return json.dumps(wire, allow_nan=False, ensure_ascii=False)
         if state.data is not None:
             wire["state"]["data"] = state.data
         if state.stream is not None:
