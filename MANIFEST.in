@@ -1,0 +1,2 @@
+include Dockerfile requirements.lock
+include scripts/build_native.py

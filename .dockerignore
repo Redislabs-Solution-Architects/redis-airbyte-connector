@@ -7,3 +7,8 @@ secrets
 build
 dist
 *.jsonl
+
+source_redis_adbc/*.so
+source_redis_adbc/*.dylib
+source_redis_adbc/*.dll
+source_redis_adbc/native-LICENSE

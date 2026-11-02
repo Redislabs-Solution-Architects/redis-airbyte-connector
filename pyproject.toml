@@ -13,7 +13,6 @@ requires-python = ">=3.11,<3.15"
 dependencies = [
   "airbyte-cdk==7.45.0",
   "adbc-driver-manager==1.13.0",
-  "adbc-driver-redis==0.0.19",
   "adbc-driver-flightsql==1.13.0",
   "pyarrow==26.0.0",
 ]
@@ -34,7 +33,7 @@ destination-redis-adbc = "destination_redis_adbc.__main__:main"
 include = ["source_redis_adbc*", "destination_redis_adbc*"]
 
 [tool.setuptools.package-data]
-source_redis_adbc = ["spec.json"]
+source_redis_adbc = ["spec.json", "*.so", "*.dylib", "*.dll", "native-LICENSE"]
 destination_redis_adbc = ["spec.json"]
 
 [tool.pytest.ini_options]

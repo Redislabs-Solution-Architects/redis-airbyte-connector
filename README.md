@@ -30,10 +30,9 @@ source-redis-adbc spec
 destination-redis-adbc spec
 ```
 
-The package provides both commands. The pinned `adbc-driver-redis==0.0.19`
-dependency bundles native libraries for Linux x86_64/ARM64 (glibc 2.28+) and
-macOS ARM64 (macOS 12+). Windows and macOS Intel are not supported by those
-wheels. Direct Redis connections automatically find the bundled library;
+The package provides both commands. Platform wheels bundle the native Redis ADBC library for Linux x86_64/ARM64
+(glibc 2.36+) and macOS ARM64 (macOS 12+). Windows and macOS Intel are not supported by those
+wheels. Source distributions require a separately built native library. Direct Redis connections automatically find the bundled library;
 `REDIS_ADBC_LIBRARY` overrides it for custom builds. Redis Search is still
 required, and installing the package does not start a Redis server.
 
@@ -53,8 +52,8 @@ Inside a container, `localhost` refers to that container. On Docker Desktop,
 use `host.docker.internal` to reach Redis running on your host, or use a Redis
 container's service name on a shared Docker network.
 
-The native Redis driver is bundled through the pinned
-`adbc-driver-redis==0.0.19` platform wheel. Runtime: Python 3.12.12,
+The native Redis driver is built from commit
+`b99ec0aa3b61ed5db130211951d24191217efae8` and bundled in the images and platform wheels. Runtime: Python 3.12.12,
 Airbyte CDK 7.45.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.0.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through

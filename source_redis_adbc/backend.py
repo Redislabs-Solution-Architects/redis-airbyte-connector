@@ -1,6 +1,7 @@
 """The extraction layer is independent of Airbyte and the particular ADBC driver."""
 
 import os
+from pathlib import Path
 from contextlib import closing, contextmanager, suppress
 from dataclasses import dataclass
 
@@ -46,13 +47,23 @@ def connect(config):
         "adbc.redis.stream_results": "true",
         "adbc.redis.stream_batch_rows": str(config.get("batch_size", 1024)),
     })
-    if not os.environ.get("REDIS_ADBC_LIBRARY"):
-        from adbc_driver_redis import dbapi as redis
-
-        return redis.connect(config["uri"], db_kwargs=options, autocommit=True)
     return dbapi.connect(
-        driver=os.environ["REDIS_ADBC_LIBRARY"],
+        driver=driver_path(),
         entrypoint="AdbcDriverRedisInit", db_kwargs=options, autocommit=True,
+    )
+
+
+def driver_path():
+    override = os.environ.get("REDIS_ADBC_LIBRARY")
+    if override:
+        return override
+    for name in ("libadbc_driver_redis.so", "libadbc_driver_redis.dylib", "adbc_driver_redis.dll"):
+        path = Path(__file__).with_name(name)
+        if path.is_file():
+            return str(path)
+    raise ConnectorError(
+        "Redis native library is missing. Install a supported platform wheel or set "
+        "REDIS_ADBC_LIBRARY to a built Redis ADBC library."
     )
 
 

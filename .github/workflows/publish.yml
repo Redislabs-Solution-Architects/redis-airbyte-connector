@@ -46,22 +46,72 @@ jobs:
               output.write(f'version={version}\n')
           PY
       - run: pip install -r requirements.lock && pip install build twine pytest==9.2.0
-      - run: python -m build && twine check dist/*
-      - run: pip install --no-deps dist/*.whl && pip check
+      - run: python -m build --sdist && twine check dist/*
+      - run: pip install --no-deps -e . && pip check
       - run: pytest -q -m 'not integration'
-      - name: Smoke test installed wheel outside the checkout
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+  wheels:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: manylinux_2_36_x86_64
+          - runner: ubuntu-24.04-arm
+            platform: manylinux_2_36_aarch64
+          - runner: macos-14
+            platform: macosx_12_0_arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@v5
+        if: runner.os == 'macOS'
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - run: python scripts/build_native.py
+      - run: pip install build twine
+      - run: python -m build --wheel && twine check dist/*
+        env:
+          REDIS_WHEEL_PLATFORM: ${{ matrix.platform }}
+      - run: pip install dist/*.whl && pip check
+      - name: Verify the installed wheel and native library
         working-directory: /tmp
         run: |
           source-redis-adbc spec
           destination-redis-adbc spec
           python - <<'PY'
           import ctypes
-          from adbc_driver_redis import _driver_path
-          assert ctypes.CDLL(_driver_path()).AdbcDriverRedisInit
+          from source_redis_adbc.backend import driver_path
+          assert ctypes.CDLL(driver_path()).AdbcDriverRedisInit
           PY
-      - name: Checksums
-        working-directory: dist
-        run: sha256sum *.whl *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist/*.whl
+  distributions:
+    needs: [build, wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+      - run: cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: distributions
@@ -123,7 +173,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
   pypi:
-    needs: build
+    needs: distributions
     if: github.event_name == 'release' || inputs.publish_pypi
     runs-on: ubuntu-latest
     environment: pypi
@@ -137,7 +187,7 @@ jobs:
       - run: rm dist/SHA256SUMS
       - uses: pypa/gh-action-pypi-publish@release/v1
   release-assets:
-    needs: build
+    needs: distributions
     runs-on: ubuntu-latest
     permissions:
       contents: write

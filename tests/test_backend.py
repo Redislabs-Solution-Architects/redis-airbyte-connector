@@ -170,23 +170,27 @@ def test_connection_modes_share_generic_backend(monkeypatch):
 
 
 def test_default_connection_uses_bundled_native_driver(monkeypatch):
-    import ctypes
     from pathlib import Path
 
-    from adbc_driver_redis import _driver_path
-
     monkeypatch.delenv("REDIS_ADBC_LIBRARY", raising=False)
-    library = _driver_path()
-    assert Path(library).is_file()
-    assert ctypes.CDLL(library).AdbcDriverRedisInit
+    monkeypatch.setattr(Path, "is_file", lambda path: path.name == "libadbc_driver_redis.so")
     manager = Mock()
     monkeypatch.setattr("source_redis_adbc.backend.dbapi.connect", manager)
     connect(CONFIG)
     args = manager.call_args.kwargs
-    assert args["driver"] == library
+    assert args["driver"].endswith("source_redis_adbc/libadbc_driver_redis.so")
     assert args["autocommit"] is True
     assert args["db_kwargs"]["uri"] == CONFIG["uri"]
     assert args["db_kwargs"]["adbc.redis.stream_results"] == "true"
+
+
+def test_missing_native_library_has_actionable_error(monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.delenv("REDIS_ADBC_LIBRARY", raising=False)
+    monkeypatch.setattr(Path, "is_file", lambda path: False)
+    with pytest.raises(ConnectorError, match="Install a supported platform wheel"):
+        connect(CONFIG)
 
 
 @pytest.mark.parametrize("config", [

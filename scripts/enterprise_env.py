@@ -263,9 +263,9 @@ def test():
     args = ["docker", "run", "--rm", "--network", NAME, "-v", f"{DIRECTORY}:/enterprise-test:ro",
         "-e", "REDIS_ENTERPRISE_CONFIG=/enterprise-test/config.json"]
     if (DIRECTORY / "flight.json").exists():
-        args.extend(["-e", "FLIGHT_SQL_CONFIG=/enterprise-test/flight.json", TEST_IMAGE, "-q", "-m", "integration"])
+        args.extend(["-e", "FLIGHT_SQL_CONFIG=/enterprise-test/flight.json", TEST_IMAGE, "-q", "--tb=line", "-m", "integration"])
     else:
-        args.extend([TEST_IMAGE, "-q", "tests/test_integration.py", "tests/test_destination_integration.py"])
+        args.extend([TEST_IMAGE, "-q", "--tb=line", "tests/test_integration.py", "tests/test_destination_integration.py"])
     subprocess.run(args, check=True)
 
 
