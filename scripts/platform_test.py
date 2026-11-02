@@ -166,9 +166,13 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
  cur.execute('SELECT id, label, amount FROM "{outgoing}"."orders" ORDER BY id')
  rows=cur.fetch_arrow_table().to_pylist()
  assert len(rows)==5, len(rows)
- by_id={{row['id']:row for row in rows}}
- assert by_id['9007199254740993']['amount']=='12345678901234567890.123456789'
- assert by_id['2']['label'] is None and by_id['2']['amount'] is None
+ expected=[
+  {{'id':'2','label':None,'amount':None}},
+  {{'id':'3','label':'third','amount':'1.000000001'}},
+  {{'id':'4','label':'fourth','amount':'0.000000000'}},
+  {{'id':'5','label':'fifth','amount':'-0.000000001'}},
+  {{'id':'9007199254740993','label':'first','amount':'12345678901234567890.123456789'}}]
+ assert rows==expected, 'Platform destination values differ from the synthetic fixture'
  print('Platform destination verified: five rows, exact large integer/decimal strings and NULLs; overwrite replay preserved row count.')
 '''
         (folder / 'verify.py').write_text(verification)

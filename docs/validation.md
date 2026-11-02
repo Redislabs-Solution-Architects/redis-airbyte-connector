@@ -1,5 +1,37 @@
 # Validation record
 
+## Release gate validation
+
+Validated on November 1, 2026, in the release-validation branch, without changing
+the published 0.1.1 artifacts:
+
+- 123 unit/CLI tests passed; metadata checks, actionlint, source-distribution
+  build and `twine check` passed.
+- Six native authenticated TLS Enterprise tests passed against the candidate
+  images. Both PostgreSQL syncs and the Redis CLI round trip passed, including
+  failed Overwrite, retry, empty Overwrite and exact checkpoint preservation.
+- The official pinned CAT source suite passed 36 tests (two skipped, two
+  historical-compatibility tests deselected); the destination suite passed 25
+  tests (four source-only tests skipped, one historical test deselected).
+  These runs do not claim historical-image backward compatibility.
+- A real local Airbyte 2.0.1 installation registered and checked both custom
+  connectors, discovered the source, completed two full-refresh Overwrite jobs,
+  cancelled a queued job, and completed a manual restart. Five destination rows
+  retained exact large integer and decimal strings and NULLs. Cancellation
+  preserved the previously published target. This tests queued cancellation;
+  it does not claim to interrupt an active platform write.
+
+The real platform test exposed two destination compatibility issues now covered
+by regression tests: Airbyte's catalog normalization removes optional NULL unions,
+and the CDK parser omits the platform's checkpoint ID. Optional fields accept
+NULL after normalization, while required fields retain their constraints. The
+destination preserves complete incoming state envelopes through parsing, deferred
+Overwrite spooling and acknowledgement, including unknown platform fields.
+
+The reusable CI runs native AMD64/ARM64 integration and acceptance checks and an
+AMD64 platform check. The release-only validation also builds and installs all
+three platform wheels; hosted run results are attached to the pull request.
+
 ## Version 0.1.1 packaging validation
 
 Validated on November 1, 2026, with the native driver pinned to
