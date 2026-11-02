@@ -146,10 +146,10 @@ def up():
         return status == "completed"
 
     wait("Enterprise cluster bootstrap", bootstrapped)
-    certificates = {"certificates": [
+    certificate_payload = {"certificates": [
         {"name": name, "certificate": (DIRECTORY / "server.crt").read_text(),
          "key": (DIRECTORY / "server.key").read_text()} for name in ("api", "proxy")]}
-    wait("Enterprise certificate installation", lambda: api("PUT", "cluster/certificates", certificates) or True)
+    wait("Enterprise certificate installation", lambda: api("PUT", "cluster/certificates", certificate_payload) or True)
     api = API(state)
     wait("CA-verified management API", lambda: api("GET", "cluster"))
     role = api("POST", "roles", {"name": "airbyte-test", "management": "none"})["uid"]
