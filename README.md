@@ -205,8 +205,11 @@ operations and attempts restoration on failure; incomplete recovery retains
 `airbyte_backup_*` tables for inspection. Cleanup failures can leave backups.
 This is not an atomic multi-table transaction: readers may briefly see renamed
 tables, and process death during promotion can require manual backup recovery.
-Clean EOF is treated as completion. The job runner must report or abort upstream
-failures; a source that closes a truncated input without an ERROR trace cannot be
+An ERROR trace or an INCOMPLETE stream-status trace fails the write before
+promotion and prevents subsequent STATE acknowledgements. Other stream-status
+traces remain informational. Clean EOF is treated as completion. The job runner
+must report or abort upstream failures; a source that closes a truncated input
+without either failure trace cannot be
 distinguished from a completed input by this destination.
 Allow only one writer per target. Overwrite replaces the table definition and
 indexes; it is intended for dedicated destination tables, not application tables.

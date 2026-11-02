@@ -314,6 +314,35 @@ def test_source_error_trace_prevents_overwrite_publication():
     assert not any("ALTER TABLE" in c.args[0] for c in b.cursor.execute.call_args_list)
 
 
+def stream_status(status):
+    return AirbyteMessageSerializer.load({
+        "type": "TRACE",
+        "trace": {"type": "STREAM_STATUS", "emitted_at": 1,
+                  "stream_status": {"stream_descriptor": {"name": "items", "namespace": "public"},
+                                    "status": status}},
+    })
+
+
+@pytest.mark.parametrize("mode", ["append", "overwrite"])
+def test_incomplete_source_stream_fails_without_acknowledgement(mode):
+    w, b = writer(existing=True)
+    with pytest.raises(ConnectorError, match="incomplete"):
+        list(w.write(catalog(mode), [record(1), stream_status("INCOMPLETE"), state()]))
+    assert b.closed
+    assert not any("ALTER TABLE" in c.args[0] for c in b.cursor.execute.call_args_list)
+    if mode == "overwrite":
+        assert any("DROP TABLE IF EXISTS" in c.args[0] and "airbyte_stage_" in c.args[0]
+                   for c in b.cursor.execute.call_args_list)
+
+
+def test_successful_source_stream_status_traces_allow_overwrite():
+    w, b = writer(existing=True)
+    output = list(w.write(catalog("overwrite"), [stream_status("STARTED"), record(1),
+                                               stream_status("RUNNING"), stream_status("COMPLETE"), state()]))
+    assert len(output) == 1
+    assert any('RENAME TO "items"' in c.args[0] for c in b.cursor.execute.call_args_list)
+
+
 def test_destination_cli_spec():
     result = subprocess.run([sys.executable, "-m", "destination_redis_adbc", "spec"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
