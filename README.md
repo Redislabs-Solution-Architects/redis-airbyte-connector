@@ -9,30 +9,57 @@ batches, with Append and staged Overwrite.
 
 The upstream source proposal is [Airbyte PR #90323](https://github.com/airbytehq/airbyte/pull/90323).
 
+## Install
+
+Published container images include the native Redis driver and are the primary
+installation method for self-managed Airbyte:
+
+```sh
+docker pull ghcr.io/redislabs-solution-architects/source-redis-adbc:0.1.1
+docker pull ghcr.io/redislabs-solution-architects/destination-redis-adbc:0.1.1
+```
+
+Use those full image names when registering custom connectors in Airbyte.
+
+For direct CLI use, install both connectors and the native driver with Python
+3.11–3.14:
+
+```sh
+python -m pip install redis-airbyte-connector==0.1.1
+source-redis-adbc spec
+destination-redis-adbc spec
+```
+
+The package provides both commands. Platform wheels bundle the native Redis ADBC library for Linux x86_64/ARM64
+(glibc 2.36+) and macOS ARM64 (macOS 12+). Windows and macOS Intel are not supported by those
+wheels. Source distributions require a separately built native library. Direct Redis connections automatically find the bundled library;
+`REDIS_ADBC_LIBRARY` overrides it for custom builds. Redis Search is still
+required, and installing the package does not start a Redis server.
+
 ## Build and run
 
 ```sh
-docker build --target runtime -t source-redis-adbc:0.1.0 .
-docker run --rm source-redis-adbc:0.1.0 spec
+docker build --target runtime -t source-redis-adbc:0.1.1 .
+docker run --rm source-redis-adbc:0.1.1 spec
 mkdir -p secrets
 cp examples/config.json secrets/config.json
 # Edit secrets/config.json for your Redis Software or Redis Cloud endpoint.
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.0 check --config /config/config.json
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.0 discover --config /config/config.json
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.1 check --config /config/config.json
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.1 discover --config /config/config.json
 ```
 
 Inside a container, `localhost` refers to that container. On Docker Desktop,
 use `host.docker.internal` to reach Redis running on your host, or use a Redis
 container's service name on a shared Docker network.
 
-The native Redis driver is compiled into the image from commit
-`b99ec0aa3b61ed5db130211951d24191217efae8`. Runtime: Python 3.12.12,
+The native Redis driver is built from commit
+`b99ec0aa3b61ed5db130211951d24191217efae8` and bundled in the images and platform wheels. Runtime: Python 3.12.12,
 Airbyte CDK 7.45.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.0.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through
 Airbyte to the destination, and no native Arrow transport or speedup is claimed.
 
-Register `source-redis-adbc:0.1.0` as a custom source in a self-managed Airbyte
+Register `source-redis-adbc:0.1.1` as a custom source in a self-managed Airbyte
 installation that can pull your image. Discover the catalog, select streams and
 fields, and choose Full Refresh with Overwrite or Append at the destination.
 Push the image to your own registry when Airbyte runs on another machine.
@@ -41,7 +68,7 @@ For direct CLI reads, create a configured catalog from discovery (see
 `examples/catalog.json`) and run:
 
 ```sh
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.0 \
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.1.1 \
   read --config /config/config.json --catalog /config/catalog.json
 ```
 
@@ -112,13 +139,13 @@ bash scripts/test-flight-sql.sh
 Build the companion destination from the same pinned driver/runtime:
 
 ```sh
-docker build --target destination -t destination-redis-adbc:0.1.0 .
-docker run --rm destination-redis-adbc:0.1.0 spec
+docker build --target destination -t destination-redis-adbc:0.1.1 .
+docker run --rm destination-redis-adbc:0.1.1 spec
 cp examples/destination-config.json secrets/destination-config.json
 # Edit the URI before checking or writing.
-docker run --rm -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.0 \
+docker run --rm -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.1 \
   check --config /config/destination-config.json
-docker run --rm -i -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.0 \
+docker run --rm -i -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.1.1 \
   write --config /config/destination-config.json --catalog /config/catalog.json < records.jsonl
 ```
 
@@ -198,11 +225,13 @@ python3 scripts/enterprise_env.py e2e
 python3.12 -m venv .venv
 .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest -m 'not integration'
-docker build --target test -t source-redis-adbc-test:0.1.0 .
-docker run --rm source-redis-adbc-test:0.1.0 -m 'not integration'
+docker build --target test -t source-redis-adbc-test:0.1.1 .
+docker run --rm source-redis-adbc-test:0.1.1 -m 'not integration'
 ```
 
-For local Python use, set `REDIS_ADBC_LIBRARY` to a built native shared library.
+Platform-wheel installations use the bundled native driver by default. For
+editable/source installations, run `python scripts/build_native.py` first. Set `REDIS_ADBC_LIBRARY`
+only when testing a custom native shared library.
 All integration tests require a dedicated, disposable Redis Enterprise cluster
 (Redis Software or Redis Cloud) with Search, TLS enabled, and a database username
 and password. Create the local environment with Python 3.11+, Docker, and OpenSSL:
@@ -266,7 +295,6 @@ missing username/password credentials before connecting.
 
 ```sh
 export REDIS_ENTERPRISE_CONFIG="$PWD/secrets/redis.json"
-export REDIS_ADBC_LIBRARY=/absolute/path/libadbc_driver_redis.so
 .venv/bin/python -m pytest tests/test_integration.py
 ```
 

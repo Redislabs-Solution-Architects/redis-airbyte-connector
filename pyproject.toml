@@ -3,10 +3,12 @@ requires = ["setuptools>=80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "source-redis-adbc"
-version = "0.1.0"
+name = "redis-airbyte-connector"
+version = "0.1.1"
 description = "Airbyte source and destination for Redis through Apache Arrow ADBC"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.15"
 dependencies = [
   "airbyte-cdk==7.45.0",
@@ -14,6 +16,11 @@ dependencies = [
   "adbc-driver-flightsql==1.13.0",
   "pyarrow==26.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector"
+Repository = "https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector"
+Issues = "https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector/issues"
 
 [project.optional-dependencies]
 test = ["pytest==9.2.0"]
@@ -26,7 +33,7 @@ destination-redis-adbc = "destination_redis_adbc.__main__:main"
 include = ["source_redis_adbc*", "destination_redis_adbc*"]
 
 [tool.setuptools.package-data]
-source_redis_adbc = ["spec.json"]
+source_redis_adbc = ["spec.json", "*.so", "*.dylib", "*.dll", "native-LICENSE"]
 destination_redis_adbc = ["spec.json"]
 
 [tool.pytest.ini_options]

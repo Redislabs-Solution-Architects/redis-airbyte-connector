@@ -1,5 +1,29 @@
 # Validation record
 
+## Version 0.1.1 packaging validation
+
+Validated on November 1, 2026, with the native driver pinned to
+`b99ec0aa3b61ed5db130211951d24191217efae8`:
+
+- 104 unit/CLI tests passed on macOS ARM64.
+- A macOS ARM64 platform wheel built, passed `twine check`, and installed into a
+  fresh Python environment. Both CLI specifications ran, and the installed
+  library loaded and exported `AdbcDriverRedisInit`. Its minimum macOS version
+  was verified as 12.0.
+- All six native source/destination tests passed on a newly provisioned,
+  authenticated TLS Redis Enterprise database in Linux ARM64 containers.
+- Both PostgreSQL destination syncs and the Redis destination/source/destination
+  CLI round trip passed, including nested values, exact state preservation,
+  failed Overwrite, retry, and empty Overwrite.
+- The current PyPI `adbc-driver-redis==0.0.19` library was tested and rejected as
+  a packaging dependency because it lacks nested-struct ingestion. Version
+  0.1.1 bundles the validated revision directly in platform wheels and images.
+
+The Flight SQL integration test was not rerun for this packaging change. The
+prior authenticated TLS gateway validation remains recorded below. Release CI
+also builds and loads the native wheel on Linux AMD64 and ARM64 and smoke-tests
+the connector images on both architectures before completing publication.
+
 The current authenticated TLS environment was validated on November 1, 2026:
 
 - Unit suite: 102 tests passed.
