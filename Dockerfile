@@ -22,7 +22,7 @@ COPY --from=driver /driver/go/build/libadbc_driver_redis.so ./source_redis_adbc/
 COPY --from=driver /driver/LICENSE ./source_redis_adbc/native-LICENSE
 RUN pip install --no-cache-dir --no-build-isolation --no-deps . && useradd --uid 10001 --create-home connector
 USER connector
-LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/source-redis-adbc io.airbyte.version=0.1.1
+LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/source-redis-adbc io.airbyte.version=0.1.2
 ENTRYPOINT ["python", "-m", "source_redis_adbc"]
 
 FROM runtime AS test
@@ -38,7 +38,7 @@ FROM runtime AS production
 
 FROM runtime AS destination
 ENV AIRBYTE_ENTRYPOINT="python -m destination_redis_adbc"
-LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/destination-redis-adbc io.airbyte.version=0.1.1
+LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/destination-redis-adbc io.airbyte.version=0.1.2
 ENTRYPOINT ["python", "-m", "destination_redis_adbc"]
 
 FROM production AS default-source

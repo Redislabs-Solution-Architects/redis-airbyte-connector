@@ -12,7 +12,10 @@ import urllib.error
 import urllib.request
 import uuid
 
-import enterprise_env as enterprise
+if __package__:
+    from . import enterprise_env as enterprise
+else:
+    import enterprise_env as enterprise
 
 NODE = "airbyte-abctl-control-plane"
 NAMESPACE = "airbyte-abctl"
@@ -37,6 +40,12 @@ def platform_status():
             print('Platform pod ' + pod['metadata']['name'] + ': ' + ', '.join(states), flush=True)
     except (subprocess.SubprocessError, ValueError, KeyError):
         print('Platform pod diagnostics unavailable', flush=True)
+
+
+class AirbyteHTTPError(RuntimeError):
+    def __init__(self, path, code):
+        self.code = code
+        super().__init__(f'Airbyte {path} failed (HTTP {code})')
 
 
 class API:
@@ -76,10 +85,23 @@ class API:
                 return self._request(path, body, method, public, refresh=False)
             if code >= 500:
                 platform_status()
-            raise RuntimeError(f'Airbyte {path} failed (HTTP {code})') from None
+            raise AirbyteHTTPError(path, code) from None
         except (urllib.error.URLError, TimeoutError):
             platform_status()
             raise RuntimeError(f'Airbyte {path} did not respond') from None
+
+    def sync(self, connection_id, timeout=60):
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                return self('connections/sync', {'connectionId': connection_id})['job']['id']
+            except AirbyteHTTPError as error:
+                # Job status can be terminal before its Temporal workflow is idle.
+                # A 409 rejects the request, so retrying cannot duplicate a job.
+                if error.code != 409 or time.monotonic() >= deadline:
+                    raise
+                print('Waiting for Airbyte connection to accept the next sync...', flush=True)
+                time.sleep(2)
 
     def job(self, job_id, expected='succeeded', timeout=600):
         deadline = time.monotonic() + timeout
@@ -179,7 +201,7 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
             'syncCatalog': {'streams': [stream]}})
         ids['connection'] = connection['connectionId']
         for attempt in range(2):
-            job_id = api('connections/sync', {'connectionId': ids['connection']})['job']['id']
+            job_id = api.sync(ids['connection'])
             api.job(job_id)
             evidence['jobs'].append({'id': job_id, 'status': 'succeeded'})
             print(f'Platform sync {attempt + 1} succeeded (job {job_id})', flush=True)
@@ -202,14 +224,14 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
         (folder / 'verify.py').write_text(verification)
         subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
                         '--entrypoint', 'python', args.source_image, '/platform/verify.py'], check=True)
-        cancel_id = api('connections/sync', {'connectionId': ids['connection']})['job']['id']
+        cancel_id = api.sync(ids['connection'])
         api('jobs/cancel', {'id': cancel_id})
         api.job(cancel_id, expected='cancelled')
         evidence['jobs'].append({'id': cancel_id, 'status': 'cancelled', 'scope': 'queued job'})
         # Cancellation must leave the previous published target readable.
         subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
                         '--entrypoint', 'python', args.source_image, '/platform/verify.py'], check=True)
-        retry_id = api('connections/sync', {'connectionId': ids['connection']})['job']['id']
+        retry_id = api.sync(ids['connection'])
         api.job(retry_id)
         evidence['jobs'].append({'id': retry_id, 'status': 'succeeded', 'scope': 'manual restart after cancellation'})
         subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME, '-v', f'{folder}:/platform:ro',
