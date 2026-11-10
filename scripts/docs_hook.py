@@ -19,5 +19,8 @@ def on_files(files, config):
         if destination == "index.md":
             # The README is at the repo root; this page lives alongside docs/.
             content = content.replace("](docs/", "](")
+        else:
+            # Connector READMEs link back to docs/ from two directories down.
+            content = content.replace("](../../docs/", "](")
         files.append(File.generated(config, destination, content=content))
     return files

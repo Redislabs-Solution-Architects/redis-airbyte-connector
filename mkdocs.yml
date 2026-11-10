@@ -17,6 +17,7 @@ nav:
   - Getting started: index.md
   - Source connector: source.md
   - Destination connector: destination.md
+  - Source consistency: source-consistency.md
   - Validation: validation.md
   - Releasing: releasing.md
   - Publishing the docs: website.md
