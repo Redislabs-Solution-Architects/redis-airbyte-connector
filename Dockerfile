@@ -1,6 +1,6 @@
 # The driver and Python runtime are deliberately pinned independently of main.
-FROM golang:1.26.10-bookworm@sha256:23ce71337b726608afb1bc00986e630a05034a87a87ea1fc2cd1ae5cf33387eb AS driver
-ARG REDIS_ADBC_REF=b99ec0aa3b61ed5db130211951d24191217efae8
+FROM golang:1.27.3-bookworm@sha256:dc0963f32053e4bc451d24d87e3892d42d01021b61f093e98eb95c0352bb84b0 AS driver
+ARG REDIS_ADBC_REF=b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd
 WORKDIR /driver
 RUN git init && git remote add origin https://github.com/redis/redis-adbc-driver.git \
     && git fetch --depth 1 origin ${REDIS_ADBC_REF} && git checkout --detach FETCH_HEAD

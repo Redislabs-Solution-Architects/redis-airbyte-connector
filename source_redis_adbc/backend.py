@@ -35,8 +35,9 @@ def validate_config(config, spec):
     if not config["uri"].startswith(schemes):
         raise ConnectorError("URI scheme does not match the selected connection type.")
     forbidden = {"uri", "driver", "entrypoint", "adbc.connection.autocommit"}
-    if forbidden.intersection(config.get("database_options", {})):
-        raise ConnectorError("Database options cannot override connection or transaction settings.")
+    options = config.get("database_options", {})
+    if forbidden.intersection(options) or any(key.startswith("adbc.redis.read_snapshot_") for key in options):
+        raise ConnectorError("Database options cannot override connection, transaction or read snapshot settings.")
 
 
 def connect(config):
@@ -122,13 +123,47 @@ class AdbcBackend:
     @contextmanager
     def connection(self):
         try:
+            if (self.config.get("read_consistency") == "shared_snapshot" and
+                    self.config.get("connection_type", "redis") != "redis"):
+                raise ConnectorError("Shared snapshots are unsupported for Flight SQL.")
             with closing(self.connect_fn(self.config)) as connection:
-                yield connection
+                with self.read_snapshot(connection):
+                    yield connection
         except (ConnectorError, ConversionError):
             raise
         except Exception:
             # ADBC diagnostics can include credentials, option values and URIs.
             raise ConnectorError("ADBC operation failed. Verify connectivity, permissions, Search support and schema; driver diagnostics were withheld to protect credentials.") from None
+
+    @contextmanager
+    def read_snapshot(self, connection):
+        if self.config.get("read_consistency") != "shared_snapshot":
+            yield
+            return
+        options = connection.adbc_connection
+        try:
+            try:
+                options.set_options(**{
+                    "adbc.redis.read_snapshot_retention_ms": self.config.get("snapshot_retention_ms", 900000),
+                })
+                # Successful acquisition is the capability probe, including for
+                # custom REDIS_ADBC_LIBRARY overrides. Never downgrade or retry.
+                options.set_options(**{"adbc.redis.read_snapshot_action": "acquire"})
+            except Exception:
+                raise ConnectorError(
+                    "Could not acquire the required shared snapshot. Use Redis ADBC v0.0.24 "
+                    "or a compatible newer library, protocol-17 managed storage and sufficient "
+                    "snapshot permissions/capacity. Driver diagnostics were withheld to protect credentials."
+                ) from None
+            yield
+        except BaseException:
+            # Close/failure must retain the original error, even if release also
+            # fails. Connection close and server lease expiry remain fallbacks.
+            with suppress(Exception):
+                options.set_options(**{"adbc.redis.read_snapshot_action": "release"})
+            raise
+        else:
+            options.set_options(**{"adbc.redis.read_snapshot_action": "release"})
 
     @contextmanager
     def query(self, connection, sql):

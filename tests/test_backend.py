@@ -153,6 +153,98 @@ def test_connection_failures_are_safe():
     assert "secret" not in str(exc.value)
 
 
+def test_shared_snapshot_covers_metadata_and_two_queries_until_cleanup():
+    reader = Reader([pa.record_batch([[1], ["a"]], schema=SCHEMA)])
+    source, connection, cursor = backend(reader, [metadata(), metadata(name="other")])
+    source.config = {**CONFIG, "read_consistency": "shared_snapshot", "snapshot_retention_ms": 120000}
+    events = []
+    options = connection.adbc_connection
+    options.set_options.side_effect = lambda **kw: events.append(kw)
+    original_metadata = connection.adbc_get_objects.side_effect
+    def objects(**kw):
+        assert events[-1] == {"adbc.redis.read_snapshot_action": "acquire"}
+        return original_metadata(**kw)
+    connection.adbc_get_objects.side_effect = objects
+    connection.adbc_get_table_schema.side_effect = lambda *a, **kw: (
+        events[-1] == {"adbc.redis.read_snapshot_action": "acquire"} and SCHEMA
+    )
+    selections = selection() + [("public", "other", schema_to_json(SCHEMA)["properties"])]
+    records = source.read(selections)
+    assert next(records)[0].name == "items"
+    assert events == [
+        {"adbc.redis.read_snapshot_retention_ms": 120000},
+        {"adbc.redis.read_snapshot_action": "acquire"},
+    ]
+    assert [table.name for table, _ in records] == ["other"]
+    assert events[-1] == {"adbc.redis.read_snapshot_action": "release"}
+    assert cursor.execute.call_count == 2
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize("action", ["check", "discover", "read"])
+def test_shared_snapshot_acquisition_failure_is_terminal_and_safe(action):
+    source, connection, cursor = backend(Reader([]))
+    source.config = {**CONFIG, "read_consistency": "shared_snapshot"}
+    def options(**kw):
+        if kw.get("adbc.redis.read_snapshot_action") == "acquire":
+            raise RuntimeError(CONFIG["uri"])
+    connection.adbc_connection.set_options.side_effect = options
+    with pytest.raises(ConnectorError, match="Could not acquire") as error:
+        if action == "read":
+            list(source.read(selection()))
+        else:
+            getattr(source, action)()
+    assert "secret" not in str(error.value)
+    connection.adbc_get_objects.assert_not_called()
+    cursor.execute.assert_not_called()
+    connection.adbc_connection.set_options.assert_any_call(**{"adbc.redis.read_snapshot_action": "release"})
+    source.connect_fn.assert_called_once()
+    connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize("failure", ["cancel", "expired", "schema"])
+def test_shared_snapshot_failure_releases_after_reader_cleanup_without_retry(failure):
+    reader = Reader([pa.record_batch([[1], ["a"]], schema=SCHEMA)],
+                    late_error=RuntimeError("expired " + CONFIG["uri"]) if failure == "expired" else None)
+    source, connection, cursor = backend(reader)
+    source.config = {**CONFIG, "read_consistency": "shared_snapshot"}
+    if failure == "schema":
+        reader.schema = pa.schema([pa.field("changed", pa.int64())])
+    def options(**kw):
+        if kw.get("adbc.redis.read_snapshot_action") == "release":
+            assert reader.closed
+            assert cursor.close.called
+    connection.adbc_connection.set_options.side_effect = options
+    with closing(source.read(selection())) as records:
+        if failure == "schema":
+            with pytest.raises(ConnectorError, match="Query schema changed"):
+                next(records)
+        else:
+            next(records)
+            if failure == "expired":
+                with pytest.raises(ConnectorError) as error:
+                    next(records)
+                assert "secret" not in str(error.value)
+    connection.adbc_connection.set_options.assert_any_call(**{"adbc.redis.read_snapshot_action": "release"})
+    source.connect_fn.assert_called_once()
+    connection.close.assert_called_once()
+
+
+def test_snapshot_release_error_does_not_hide_primary_error():
+    source, connection, _ = backend(Reader([]))
+    source.config = {**CONFIG, "read_consistency": "shared_snapshot"}
+    def options(**kw):
+        if kw.get("adbc.redis.read_snapshot_action") == "release":
+            raise RuntimeError(CONFIG["uri"])
+    connection.adbc_connection.set_options.side_effect = options
+    with pytest.raises(ConnectorError, match="Selected stream"):
+        list(source.read([("public", "missing", {})]))
+    connection.close.assert_called_once()
+    with pytest.raises(ConnectorError) as error:
+        source.discover()
+    assert "secret" not in str(error.value)
+
+
 def test_connection_modes_share_generic_backend(monkeypatch):
     manager = Mock()
     monkeypatch.setattr("source_redis_adbc.backend.dbapi.connect", manager)
@@ -197,6 +289,9 @@ def test_missing_native_library_has_actionable_error(monkeypatch):
     {}, {"uri": "http://localhost"}, {**CONFIG, "batch_size": 0},
     {**CONFIG, "schemas": []}, {**CONFIG, "database_options": {"uri": "redis://other"}},
     {**CONFIG, "connection_type": "flight_sql"}, {**CONFIG, "database_options": {"option": 123}},
+    {**CONFIG, "snapshot_retention_ms": 119999}, {**CONFIG, "snapshot_retention_ms": 3600001},
+    {**CONFIG, "database_options": {"adbc.redis.read_snapshot_action": "release"}},
+    {**CONFIG, "database_options": {"adbc.redis.read_snapshot_retention_ms": "120000"}},
 ])
 def test_invalid_config_is_safe(config):
     with pytest.raises(ConnectorError) as exc:

@@ -296,11 +296,13 @@ def test(source_image=None):
                      "--entrypoint", "sh", source_image, "-c",
                      "python -m pip install --quiet --target /tmp/test-tools pytest==9.2.0 && "
                      "PYTHONPATH=/tmp/test-tools:/validation python -m pytest -q --tb=line "
-                     "/validation/tests/test_integration.py /validation/tests/test_destination_integration.py"])
+                     "/validation/tests/test_integration.py /validation/tests/test_destination_integration.py "
+                     "/validation/tests/test_shared_snapshot_integration.py"])
     elif (DIRECTORY / "flight.json").exists():
         args.extend(["-e", "FLIGHT_SQL_CONFIG=/enterprise-test/flight.json", TEST_IMAGE, "-q", "--tb=line", "-m", "integration"])
     else:
-        args.extend([TEST_IMAGE, "-q", "--tb=line", "tests/test_integration.py", "tests/test_destination_integration.py"])
+        args.extend([TEST_IMAGE, "-q", "--tb=line", "tests/test_integration.py", "tests/test_destination_integration.py",
+                     "tests/test_shared_snapshot_integration.py"])
     subprocess.run(args, check=True)
 
 

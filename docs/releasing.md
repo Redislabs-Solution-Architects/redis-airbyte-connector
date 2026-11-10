@@ -132,5 +132,5 @@ Airbyte support level or catalog listing.
 The native revision remains pinned to
 `b99ec0aa3b61ed5db130211951d24191217efae8`. The public
 `adbc-driver-redis==0.0.19` wheel lacks this destination's nested-struct ingestion.
-Linux uses Debian Bookworm (glibc 2.36+); macOS ARM64 uses a macOS 12 target.
+Linux uses Debian Bookworm (glibc 2.36+); macOS ARM64 uses a macOS 15 target.
 Source distributions require a separate native build; platform wheels include it.

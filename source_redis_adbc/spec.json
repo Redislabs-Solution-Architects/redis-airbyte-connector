@@ -57,7 +57,15 @@
         ],
         "default": "best_effort",
         "title": "Read consistency requirement",
-        "description": "best_effort reads live data: concurrent writes, deletes, TTL expiry and DDL can affect results within and across tables. shared_snapshot requests one point-in-time view for the sync, but is currently unsupported for both Redis ADBC and Flight SQL and fails check, discover and read before connecting."
+        "description": "best_effort uses separate statement read views. shared_snapshot binds metadata and all selected managed table/view reads in one full-refresh attempt to the same catalog generation. Requires direct Redis ADBC v0.0.24 or compatible newer library and protocol-17 storage. Flight SQL shared snapshots are unsupported."
+      },
+      "snapshot_retention_ms": {
+        "type": "integer",
+        "minimum": 120000,
+        "maximum": 3600000,
+        "default": 900000,
+        "title": "Shared snapshot lifetime (milliseconds)",
+        "description": "Fixed lifetime for shared_snapshot mode, including metadata planning and complete consumption of every selected table. Default 15 minutes; maximum one hour. Expiry fails the attempt without switching to live data. Each check, discover and read request acquires its own view."
       },
       "database_options": {
         "type": "object",

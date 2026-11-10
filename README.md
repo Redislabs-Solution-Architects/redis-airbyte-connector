@@ -31,7 +31,7 @@ destination-redis-adbc spec
 ```
 
 The package provides both commands. Platform wheels bundle the native Redis ADBC library for Linux x86_64/ARM64
-(glibc 2.36+) and macOS ARM64 (macOS 12+). Windows and macOS Intel are not supported by those
+(glibc 2.36+) and macOS ARM64 (macOS 15+). Windows and macOS Intel are not supported by those
 wheels. Source distributions require a separately built native library. Direct Redis connections automatically find the bundled library;
 `REDIS_ADBC_LIBRARY` overrides it for custom builds. Redis Search is still
 required, and installing the package does not start a Redis server.
@@ -53,7 +53,7 @@ use `host.docker.internal` to reach Redis running on your host, or use a Redis
 container's service name on a shared Docker network.
 
 The native Redis driver is built from commit
-`b99ec0aa3b61ed5db130211951d24191217efae8` and bundled in the images and platform wheels. Runtime: Python 3.12.12,
+`b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd` (v0.0.24) and bundled in the images and platform wheels. Runtime: Python 3.12.12,
 Airbyte CDK 7.45.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.0.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through
@@ -109,28 +109,42 @@ fail explicitly. Empty results emit no records.
 | List, fixed-size list, struct | Recursively converted array/object |
 | Map, union, interval, duration, extension types | Rejected |
 
-There is no incremental cursor, CDC, durable checkpoint, or snapshot isolation.
-Concurrent writes and TTL expiry can change results during a read. Failed syncs
-restart from the beginning; Append can duplicate already delivered rows, while
-Overwrite behavior is controlled by the destination. There is no automatic retry
-inside a partially emitted stream. Reader, cursor and connection handles close
-on completion, failure or cancellation; SIGTERM interrupts active reads and
-attempts ADBC cancellation. SIGKILL cannot run cleanup. Backpressure stops the
-source from requesting the next Arrow batch; the driver/server may buffer data.
+There is no incremental cursor, CDC or durable checkpoint. Failed syncs restart
+from the beginning; Append can duplicate already delivered rows, while Overwrite
+behavior is controlled by the destination. There is no automatic retry inside a
+partially emitted stream. Reader, cursor and connection handles close on
+completion, failure or cancellation; SIGTERM interrupts active reads and attempts
+ADBC cancellation. SIGKILL cannot run cleanup. Backpressure stops the source
+from requesting the next Arrow batch; the driver/server may buffer data.
 
-`read_consistency` defaults to `best_effort`, including when omitted from an
-existing configuration. Reads observe live data; full refresh does not freeze
-values within a table or across selected tables, schemas or shards. Concurrent
-deletes, expiry and DDL can also affect the read. Reusing one connection does not
-provide a shared snapshot.
+`read_consistency` defaults to `best_effort`, including when omitted. With the
+bundled v0.0.24 driver, each native SELECT has an atomic statement snapshot, but
+separate table reads can observe different committed generations.
 
-Set `"read_consistency": "shared_snapshot"` if your workflow requires one
-point-in-time view for the entire sync. **This requirement is currently
-unsupported:** check fails and discover/read raise an error before connecting
-or emitting records, for both direct Redis ADBC and Flight SQL. It never falls
-back to best-effort reads. Change the setting to `best_effort` only if the weaker
-guarantee meets your needs. See the [snapshot feasibility decision](docs/source-consistency.md)
-for upstream dependencies and the validation required before enabling snapshots.
+Set `"read_consistency": "shared_snapshot"` for one managed catalog generation
+across metadata validation and every selected table/view in a full-refresh
+attempt. Direct Redis ADBC is required. The connector acquires before read-time
+rediscovery, reads sequentially on that connection, and releases after readers
+close. Each check, discover and read request has its own view; a previous
+discover job does not establish the read attempt's view. Flight SQL rejects this
+mode before connecting. An unsupported driver, failed acquisition, expiry or
+unavailable view fails the attempt without falling back to newer data.
+
+`snapshot_retention_ms` sets the fixed shared-view lifetime: default 900000
+(15 minutes), minimum 120000 and maximum 3600000 (one hour). It includes metadata
+and complete consumption of all tables; it cannot be extended. Snapshot options
+are managed by the connector and cannot be passed through `database_options`.
+See [source consistency](docs/source-consistency.md) for limits and retry behavior.
+
+**Driver storage compatibility:** v0.0.24 uses storage protocol 17 and rejects
+earlier driver catalogs. There is no in-place upgrade/migration path. Use a fresh
+isolated driver database or the driver's explicitly supported managed import
+alongside application-owned data without legacy driver metadata. Preserve a
+verified backup and the previous deployment before changing driver versions.
+This affects both source and destination; replacing the binary does not roll
+back stored data. A separately installed `adbc-driver-redis` Python package does
+not replace this connector's bundled library; custom `REDIS_ADBC_LIBRARY`
+overrides must support successful shared-view acquisition.
 
 ## Flight SQL
 

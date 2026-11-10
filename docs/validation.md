@@ -210,10 +210,44 @@ validated.
 Other production Flight SQL gateways, deployed Redis Cloud TLS/ACL combinations,
 multi-node failover, destination outage mid-write and platform job
 cancellation/retry orchestration require deployment-specific validation. The
-connector is full-refresh only, with no snapshot isolation, CDC, persistent
-checkpoint, native Arrow transport or performance claim. Concurrent writes and
-TTL expiry are documented consistency limitations. The container was executed
-on ARM64; an AMD64 release build has not been validated here.
+earlier connector was full-refresh only, without snapshot isolation, CDC, a
+persistent checkpoint, native Arrow transport or a performance claim. Its
+concurrent-write/TTL limitations predate the native shared-view integration below.
+The container was executed on ARM64; an AMD64 release build has not been
+validated here.
 
 Upstream maintainer guidance on an in-tree Airbyte integration and any new
 batch transport remains separate work in the existing upstream discussion.
+
+## Native shared-view integration — November 10, 2026
+
+The connector now pins released Redis ADBC v0.0.24,
+`b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd`, and integrates its connection-scoped
+read view. This supersedes the historical absence of snapshot support above.
+Flight SQL shared snapshots remain explicitly unsupported.
+
+Local Python 3.12.16 checks: 185 non-integration tests passed; 10 integration tests
+were deselected. Ruff F821/F823, metadata consistency and whitespace checks passed.
+
+Native macOS ARM64 tests loaded the published v0.0.24 archive after verifying
+SHA-256 `5f9ed08bd950dc825a6920e41937d06f93e35a21af4382f7cf2a66a417c30d2b`
+against its release sidecar. Two shared-view tests passed, followed by all six
+existing source/destination integration tests and the real snapshot-expiry test
+(seven passes in that second selection). The fixture was this checkout's
+separate two-shard Redis Software 8.2.0-78.18 database, with Search, verified
+active 4x QPF, noeviction, named-user authentication and CA-verified TLS.
+
+The consistency regression acquires before read-time discovery, then uses a
+second client to update one table, add a column and insert into another, and
+drop a selected view. Complete old schemas, exact 64-bit values, NULLs and row
+multiplicities remain correct for all three streams; a fresh discover sees the
+new schema and missing view. Separate tests verify generator-close release and
+failure after partial emission when the real 120000 ms lifetime expires.
+
+The Docker test image is built from the pinned driver source with the
+checksummed Go 1.27.3 Bookworm base and the existing Python 3.12.12 runtime.
+All nine source/destination/shared-view integration tests passed in that Linux
+ARM64 container (123.86 seconds), including the real expiry test.
+The new integration module is included in the normal native CI test selection.
+Hosted AMD64/platform validation, Flight SQL shared views and a new connector
+release are separate evidence; no publication or performance claim is made here.
