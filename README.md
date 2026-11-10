@@ -1,5 +1,9 @@
 # Redis ADBC Airbyte source and destination
 
+[Documentation](https://redislabs-solution-architects.github.io/redis-airbyte-connector/)
+includes setup, connector guides and release validation, with searchable HTML
+pages. See [the publishing guide](docs/website.md) to preview or update the site.
+
 A community Airbyte source implementing the initial scope of
 [redis/redis-adbc-driver#172](https://github.com/redis/redis-adbc-driver/issues/172).
 It consumes an ADBC `RecordBatchReader` and emits Airbyte JSON records through
