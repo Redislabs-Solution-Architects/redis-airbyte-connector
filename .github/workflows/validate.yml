@@ -42,7 +42,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          # The pinned CAT/Dagger harness is validated on Ubuntu 24.04.
+          # Keep both architectures on that host baseline instead of rolling latest.
+          - runner: ubuntu-24.04
             arch: amd64
           - runner: ubuntu-24.04-arm
             arch: arm64
@@ -90,7 +92,7 @@ jobs:
           if test -f secrets/enterprise-test/state.json; then python scripts/enterprise_env.py down; fi
   platform:
     needs: images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -134,9 +136,9 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
             platform: manylinux_2_36_aarch64
-          - runner: macos-14
+          - runner: macos-15
             arch: macos
-            platform: macosx_12_0_arm64
+            platform: macosx_15_0_arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -161,7 +163,7 @@ jobs:
       - uses: actions/setup-go@v5
         if: runner.os == 'macOS'
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.3'
           cache: false
       - if: runner.os == 'macOS'
         run: python scripts/build_native.py

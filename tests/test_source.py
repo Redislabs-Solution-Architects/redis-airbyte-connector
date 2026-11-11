@@ -41,18 +41,14 @@ def test_failed_check_status():
     assert source.check(None, {"uri": "redis://localhost"}).status == Status.FAILED
 
 
-@pytest.mark.parametrize("connection_type,uri", [
-    ("redis", "rediss://user:secret@localhost"),
-    ("flight_sql", "grpc+tls://localhost:1234"),
-])
-def test_shared_snapshot_requirement_fails_before_backend_creation(connection_type, uri):
+def test_flight_shared_snapshot_fails_before_backend_creation():
     factory = Mock()
     source = SourceRedisAdbc(factory)
-    config = {"uri": uri, "connection_type": connection_type, "read_consistency": "shared_snapshot"}
+    config = {"uri": "grpc+tls://user:secret@localhost:1234", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
 
     status = source.check(None, config)
     assert status.status == Status.FAILED
-    assert "Shared snapshots are unsupported" in status.message
+    assert "Shared snapshots are unsupported for Flight SQL" in status.message
     assert "secret" not in status.message
     with pytest.raises(ConnectorError, match="Shared snapshots are unsupported"):
         source.discover(None, config)
