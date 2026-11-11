@@ -129,8 +129,12 @@ Airbyte support level or catalog listing.
 
 ## Native builds
 
-The native revision remains pinned to
-`b99ec0aa3b61ed5db130211951d24191217efae8`. The public
-`adbc-driver-redis==0.0.19` wheel lacks this destination's nested-struct ingestion.
+Always use the latest stable Redis ADBC release, currently v0.0.24 at
+`b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd`. Check the upstream latest release
+before dependency updates or connector releases. Pin its commit and version in
+both `Dockerfile` and `scripts/build_native.py`, update the native integration
+version assertion and README, then rebuild and validate the artifacts. Pass the
+released version to the upstream Makefile so ADBC GetInfo identifies the bundled
+release instead of the Makefile's development default.
 Linux uses Debian Bookworm (glibc 2.36+); macOS ARM64 uses a macOS 15 target.
 Source distributions require a separate native build; platform wheels include it.
