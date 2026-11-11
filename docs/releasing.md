@@ -26,6 +26,13 @@ and publishing. It requires:
    Linux wheels reuse the native library extracted from the tested images;
    macOS ARM64 builds the same pinned upstream revision.
 
+Jobs that load the tested Docker archives use the same Ubuntu 24.04 baseline
+as the image-producing jobs. Docker image IDs differ between the classic and
+containerd image stores; archive and image-identity verification stay mandatory.
+The disposable Enterprise setup may clean up its owned fixture and retry startup
+once after a setup failure. A second setup failure or any test failure fails the
+job; TLS/authentication checks and test suites are unchanged.
+
 Any failed gate blocks all registry publication. Candidate archives are verified
 again after loading and before pushing. The publisher tags/pushes these images;
 it never rebuilds them. Neither real credentials nor generated fixture

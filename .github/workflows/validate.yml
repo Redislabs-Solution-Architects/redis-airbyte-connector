@@ -65,7 +65,12 @@ jobs:
           docker build --target destination --label "org.opencontainers.image.source=https://github.com/$REPOSITORY" -t redis-airbyte/destination-redis-adbc:tested .
           python scripts/image_artifacts.py save
       - name: Provision authenticated TLS Redis Enterprise
-        run: python scripts/enterprise_env.py up
+        run: |
+          if ! python scripts/enterprise_env.py up; then
+            test -f secrets/enterprise-test/state.json
+            python scripts/enterprise_env.py down
+            python scripts/enterprise_env.py up
+          fi
         timeout-minutes: 10
       - name: Native integration tests against the candidate runtime
         run: python scripts/enterprise_env.py test --source-image redis-airbyte/source-redis-adbc:tested
@@ -106,7 +111,13 @@ jobs:
           name: images-amd64
           path: image-artifacts
       - run: python scripts/image_artifacts.py load
-      - run: python scripts/enterprise_env.py up
+      - name: Provision authenticated TLS Redis Enterprise
+        run: |
+          if ! python scripts/enterprise_env.py up; then
+            test -f secrets/enterprise-test/state.json
+            python scripts/enterprise_env.py down
+            python scripts/enterprise_env.py up
+          fi
         timeout-minutes: 10
       - run: python scripts/platform_env.py up
         timeout-minutes: 30
@@ -130,7 +141,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          # Match the image-producing jobs: Docker image IDs differ between stores.
+          - runner: ubuntu-24.04
             arch: amd64
             platform: manylinux_2_36_x86_64
           - runner: ubuntu-24.04-arm
