@@ -64,6 +64,8 @@ class ObservedBackend(AdbcBackend):
 def test_shared_snapshot_keeps_metadata_views_and_all_table_values(snapshot_tables):
     config, names, writer = snapshot_tables
     config = {**config, "read_consistency": "shared_snapshot"}
+    with closing(connect(config)) as connection:
+        assert connection.adbc_get_info()["driver_version"] == "v0.0.24"
     source = SourceRedisAdbc()
     assert source.check(None, config).status == Status.SUCCEEDED
     catalog = catalog_for(source, config, names)

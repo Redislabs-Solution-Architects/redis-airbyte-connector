@@ -93,6 +93,8 @@ connector builds retain their Bookworm/glibc 2.36 baseline and use Go 1.27.3.
 Flight SQL shared snapshots remain unsupported. The gateway needs its own
 metadata/session binding, option propagation and lifecycle implementation and
 validation. A native driver upgrade alone cannot provide those guarantees.
+Gateway support is tracked in
+[redis/redis-apache-arrow-flight#65](https://github.com/redis/redis-apache-arrow-flight/issues/65).
 
 See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.24/docs/shared-read-snapshots.md)
 for authority, resource, unsupported-operation and storage details.
