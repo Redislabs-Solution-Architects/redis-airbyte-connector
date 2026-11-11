@@ -1,0 +1,43 @@
+site_name: Redis Airbyte Connector
+site_description: >-
+  Install and configure the community Redis ADBC source and destination for
+  Airbyte, with full-refresh reads, typed writes, and release validation guides.
+site_url: https://redislabs-solution-architects.github.io/redis-airbyte-connector/
+repo_url: https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector
+repo_name: GitHub
+edit_uri: ''
+
+theme:
+  name: mkdocs
+  color_mode: light
+  user_color_mode_toggle: true
+  navigation_depth: 3
+
+nav:
+  - Getting started: index.md
+  - Source connector: source.md
+  - Destination connector: destination.md
+  - Source consistency: source-consistency.md
+  - Validation: validation.md
+  - Releasing: releasing.md
+  - Publishing the docs: website.md
+
+hooks:
+  - scripts/docs_hook.py
+
+plugins:
+  - search
+
+markdown_extensions:
+  - tables
+  - fenced_code
+  - toc:
+      permalink: true
+
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    not_found: warn
+    anchors: warn
+    unrecognized_links: warn
