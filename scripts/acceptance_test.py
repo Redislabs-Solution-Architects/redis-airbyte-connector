@@ -6,8 +6,9 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import uuid
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 import enterprise_env as enterprise
 
@@ -18,6 +19,30 @@ ENGINE_IMAGE = 'registry.dagger.io/engine:v0.6.4@sha256:691afa1f6ab7b8d7e867f8df
 def run(image, folder, *args):
     return subprocess.check_output(['docker', 'run', '--rm', '--network', enterprise.NAME,
         '-v', f'{folder}:/test_input', image, *args], text=True)
+
+
+def engine_diagnostics(engine, folder):
+    """Report failed suite infrastructure before finally removes the engine."""
+    try:
+        state = json.loads((folder.parent / 'state.json').read_text())
+        config = json.loads((folder / 'config.json').read_text())
+        secrets = [state['password'], state['admin_password'], config['uri']]
+        secrets += [quote(value, safe='') for value in secrets]
+        secrets += [unquote(config['uri'])]
+        for command in (
+            ['docker', 'inspect', '--format', '{{json .State}}', engine],
+            ['docker', 'logs', '--tail', '100', engine],
+        ):
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+            output = result.stdout + result.stderr
+            for secret in sorted(secrets, key=len, reverse=True):
+                if secret:
+                    output = output.replace(secret, '[REDACTED]')
+            print(f'Acceptance engine diagnostics ({command[1]}):\n{output}', file=sys.stderr, flush=True)
+    except Exception:
+        # A failed diagnostic must neither disclose raw exception text nor hide
+        # the original suite failure. Do not retry the suite or change its limits.
+        print('Acceptance engine diagnostics unavailable.', file=sys.stderr, flush=True)
 
 
 def main():
@@ -76,12 +101,16 @@ with AdbcBackend(config).connection() as c, c.cursor() as cur:
                 docker_host = subprocess.check_output(['docker', 'context', 'inspect', '--format', '{{.Endpoints.docker.Host}}'], text=True).strip()
             if not docker_host.startswith('unix://'):
                 raise RuntimeError('Acceptance tests require a local Unix Docker socket')
-            subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME,
-                '-v', f'{folder}:/test_input', '-v', docker_host.removeprefix('unix://') + ':/var/run/docker.sock',
-                '-e', f'_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://{engine}',
-                '-e', 'CONNECTOR_UNDER_TEST_IMAGE_TAR_PATH=/test_input/image.tar', CAT_IMAGE,
-                '--acceptance-test-config', '/test_input', '-q', '--tb=line', '-m', 'not backward_compatibility',
-                '--junitxml', f'/test_input/{kind}-acceptance.xml'], check=True)
+            try:
+                subprocess.run(['docker', 'run', '--rm', '--network', enterprise.NAME,
+                    '-v', f'{folder}:/test_input', '-v', docker_host.removeprefix('unix://') + ':/var/run/docker.sock',
+                    '-e', f'_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://{engine}',
+                    '-e', 'CONNECTOR_UNDER_TEST_IMAGE_TAR_PATH=/test_input/image.tar', CAT_IMAGE,
+                    '--acceptance-test-config', '/test_input', '-q', '--tb=short', '-m', 'not backward_compatibility',
+                    '--junitxml', f'/test_input/{kind}-acceptance.xml'], check=True)
+            except subprocess.CalledProcessError:
+                engine_diagnostics(engine, folder)
+                raise
     finally:
         try:
             if not args.engine:
