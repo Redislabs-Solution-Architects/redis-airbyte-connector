@@ -19,7 +19,7 @@ configuration, deployment and consistency boundaries.
 `read_consistency` defaults to `best_effort`, with separate read views for each
 table. Native `shared_snapshot` binds read-time metadata and all selected
 managed table/view reads to one catalog generation using the bundled Redis ADBC
-v0.0.24 driver. `snapshot_retention_ms` defaults to 15 minutes, with a fixed
+v0.0.28 driver. `snapshot_retention_ms` defaults to 15 minutes, with a fixed
 maximum of one hour; expiry fails the attempt without fallback. Flight SQL
 rejects this mode before connecting. See [source consistency](../../docs/source-consistency.md)
 for the lifecycle, retry limits and protocol-17 fresh-storage requirement.

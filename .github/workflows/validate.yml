@@ -24,7 +24,7 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - run: pip install -r requirements.lock && pip install --no-deps -e . && pip install pytest==9.2.0 ruff==0.17.3 build twine
       - run: ruff check --select F821,F823 source_redis_adbc destination_redis_adbc scripts tests
       - run: python scripts/check_metadata.py
@@ -56,7 +56,7 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - name: Build each candidate once
         env:
           REPOSITORY: ${{ github.repository }}
@@ -105,7 +105,7 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: actions/download-artifact@v4
         with:
           name: images-amd64
@@ -158,7 +158,7 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.14'
       - uses: actions/download-artifact@v4
         if: runner.os == 'Linux'
         with:

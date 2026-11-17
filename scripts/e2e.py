@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Redis Enterprise over TLS -> source CLI -> Airbyte destination -> PostgreSQL.
 
-Requires REDIS_ENTERPRISE_CONFIG, Python 3.11+, Docker, and a built source image.
+Requires REDIS_ENTERPRISE_CONFIG, Python 3.14, Docker, and a built source image.
 The Enterprise cluster must be disposable and reachable from Docker containers.
 PostgreSQL and the private network are removed, including after failure.
 """

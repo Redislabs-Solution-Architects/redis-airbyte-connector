@@ -1,4 +1,4 @@
-# Resolved with Python 3.12.12; regenerate from a tested runtime image.
+# Validated against pip freeze from the Python 3.14.10 runtime image; regenerate from a tested runtime image.
 adbc-driver-flightsql==1.13.0
 adbc-driver-manager==1.13.0
 airbyte-cdk==7.45.0

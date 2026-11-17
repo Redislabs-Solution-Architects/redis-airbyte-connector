@@ -9,8 +9,8 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-DRIVER_REF = "b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd"
-DRIVER_VERSION = "v0.0.24"
+DRIVER_REF = "b63a010d88d2b69707594cb9dc063992dac06b32"
+DRIVER_VERSION = "v0.0.28"
 
 
 def run(*args, **kwargs):
