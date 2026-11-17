@@ -15,11 +15,8 @@ def image_id(image):
 
 
 def checksum(path):
-    digest = hashlib.sha256()
     with path.open('rb') as file:
-        for block in iter(lambda: file.read(1024 * 1024), b''):
-            digest.update(block)
-    return digest.hexdigest()
+        return hashlib.file_digest(file, 'sha256').hexdigest()
 
 
 def verify(folder):

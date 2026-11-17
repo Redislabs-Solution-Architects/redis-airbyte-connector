@@ -1,14 +1,14 @@
 # The driver and Python runtime are deliberately pinned independently of main.
 FROM golang:1.27.3-bookworm@sha256:dc0963f32053e4bc451d24d87e3892d42d01021b61f093e98eb95c0352bb84b0 AS driver
-ARG REDIS_ADBC_REF=b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd
-ARG REDIS_ADBC_VERSION=v0.0.24
+ARG REDIS_ADBC_REF=b63a010d88d2b69707594cb9dc063992dac06b32
+ARG REDIS_ADBC_VERSION=v0.0.28
 WORKDIR /driver
 RUN git init && git remote add origin https://github.com/redis/redis-adbc-driver.git \
     && git fetch --depth 1 origin ${REDIS_ADBC_REF} && git checkout --detach FETCH_HEAD
 WORKDIR /driver/go
 RUN make build VERSION=${REDIS_ADBC_VERSION}
 
-FROM python:3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c AS runtime
+FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70 AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     AIRBYTE_ENTRYPOINT="python -m source_redis_adbc"

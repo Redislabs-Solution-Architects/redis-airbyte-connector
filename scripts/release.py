@@ -22,7 +22,8 @@ def command(*args):
 
 
 def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    with path.open('rb') as file:
+        return hashlib.file_digest(file, 'sha256').hexdigest()
 
 
 def pypi(version):

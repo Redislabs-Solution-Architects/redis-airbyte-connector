@@ -2,8 +2,9 @@
 
 The source integrates the native reusable read view released by
 [driver #365](https://github.com/redis/redis-adbc-driver/issues/365) in
-[v0.0.24](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.24), pinned
-to `b052eedad9f2fb2c6eeb7c79fe63f8bbc3ca6bdd`. This supersedes the November 2
+[v0.0.24](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.24). The bundled
+driver is now [v0.0.28](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.28),
+pinned to `b63a010d88d2b69707594cb9dc063992dac06b32`. This supersedes the November 2
 feasibility record: the driver now provides both atomic statement snapshots and
 an explicit connection-scoped shared view. The original connector request was
 [#12](https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector/issues/12).
@@ -96,5 +97,5 @@ validation. A native driver upgrade alone cannot provide those guarantees.
 Gateway support is tracked in
 [redis/redis-apache-arrow-flight#65](https://github.com/redis/redis-apache-arrow-flight/issues/65).
 
-See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.24/docs/shared-read-snapshots.md)
+See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.28/docs/shared-read-snapshots.md)
 for authority, resource, unsupported-operation and storage details.
