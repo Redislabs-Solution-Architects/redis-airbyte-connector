@@ -251,3 +251,31 @@ ARM64 container (123.86 seconds), including the real expiry test.
 The new integration module is included in the normal native CI test selection.
 Hosted AMD64/platform validation, Flight SQL shared views and a new connector
 release are separate evidence; no publication or performance claim is made here.
+
+
+## Python 3.14 minimum and Redis ADBC v0.0.28 — November 17, 2026
+
+Validated connector revision `185d35a50efbf3a63e1efe855b2f995adc1386f0` with
+Python 3.14.10 and driver v0.0.28 at
+`b63a010d88d2b69707594cb9dc063992dac06b32`. The runtime uses the Dockerfile's
+pinned Python 3.14.10 Bookworm image; all 85 runtime dependency pins matched
+its installed `pip freeze` output, and dependency checks passed.
+
+All 187 non-integration tests passed on macOS ARM64 and inside the Linux ARM64
+container. Native libraries were rebuilt from the pinned source for both
+platforms and loaded successfully. All nine source, destination and shared-view
+integration tests passed in the Linux ARM64 runtime (123.86 seconds), including
+the real snapshot-expiry test and the v0.0.28 GetInfo assertion. The fixture was
+this checkout's disposable two-shard Redis Software 8.2.0-78.18 instance with
+Search, QPF 4x, named-user authentication and CA-verified TLS; it was removed
+after validation.
+
+The sdist and macOS ARM64 wheel built and passed Twine checks. Wheel metadata
+accepts Python 3.14 and rejects 3.13, retaining the existing 3.15 upper bound.
+Both installed-wheel CLI spec commands and native loading passed outside the
+checkout. Ruff F821/F823, connector metadata, whitespace checks and the strict
+MkDocs build passed. The macOS linker warned about host objects targeting a
+newer OS than macOS 15; loading was checked only on the current host. Integration
+warnings included third-party deprecations, unregistered marks and a read-only
+pytest cache; all tests passed. Hosted AMD64, macOS 15 runtime compatibility,
+Airbyte acceptance/platform and Flight SQL checks were not rerun for this revision.
