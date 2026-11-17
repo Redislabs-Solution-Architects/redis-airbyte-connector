@@ -1,6 +1,7 @@
 """The extraction layer is independent of Airbyte and the particular ADBC driver."""
 
 import os
+import json
 from pathlib import Path
 import tempfile
 from contextlib import closing, contextmanager, suppress
@@ -38,6 +39,15 @@ def validate_config(config, spec):
     options = config.get("database_options", {})
     if forbidden.intersection(options) or any(key.startswith("adbc.redis.read_snapshot_") for key in options):
         raise ConnectorError("Database options cannot override connection, transaction or read snapshot settings.")
+    if mode == "flight_sql" and config.get("read_consistency") == "shared_snapshot":
+        if not config["uri"].startswith("grpc+tls://"):
+            raise ConnectorError("Flight SQL shared snapshots require authenticated verified TLS.")
+        reserved = ("adbc.flight.sql.session.", "adbc.flight.sql.rpc.call_header.")
+        if (any(key.startswith(reserved) for key in options) or
+                options.get("adbc.flight.sql.rpc.with_cookie_middleware", "true") != "true" or
+                options.get("adbc.flight.sql.client_option.tls_skip_verify", "false") != "false"):
+            raise ConnectorError("Flight SQL shared snapshot options cannot override session, header or TLS safety settings.")
+
 
 
 def connect(config):
@@ -89,6 +99,10 @@ def _connect(config):
     if config.get("connection_type", "redis") == "flight_sql":
         from adbc_driver_flightsql import dbapi as flight
 
+        if config.get("read_consistency") == "shared_snapshot":
+            if not config["uri"].startswith("grpc+tls://"):
+                raise ConnectorError("Flight SQL shared snapshots require authenticated verified TLS.")
+            options["adbc.flight.sql.rpc.with_cookie_middleware"] = "true"
         return flight.connect(config["uri"], db_kwargs=options, autocommit=True)
     options.update({
         "uri": config["uri"],
@@ -123,9 +137,6 @@ class AdbcBackend:
     @contextmanager
     def connection(self):
         try:
-            if (self.config.get("read_consistency") == "shared_snapshot" and
-                    self.config.get("connection_type", "redis") != "redis"):
-                raise ConnectorError("Shared snapshots are unsupported for Flight SQL.")
             with closing(self.connect_fn(self.config)) as connection:
                 with self.read_snapshot(connection):
                     yield connection
@@ -139,6 +150,10 @@ class AdbcBackend:
     def read_snapshot(self, connection):
         if self.config.get("read_consistency") != "shared_snapshot":
             yield
+            return
+        if self.config.get("connection_type", "redis") == "flight_sql":
+            with self.flight_read_snapshot(connection):
+                yield
             return
         options = connection.adbc_connection
         try:
@@ -164,6 +179,39 @@ class AdbcBackend:
             raise
         else:
             options.set_options(**{"adbc.redis.read_snapshot_action": "release"})
+
+    @contextmanager
+    def flight_read_snapshot(self, connection):
+        options = connection.adbc_connection
+        session = "adbc.flight.sql.session.option."
+        guard = "adbc.flight.sql.rpc.call_header.x-redis-read-snapshot"
+        try:
+            try:
+                if options.get_option(session + "redis.read_snapshot_protocol") != "1":
+                    raise ConnectorError("Unsupported Flight SQL snapshot protocol.")
+                options.set_options(**{session + "redis.read_snapshot": json.dumps({
+                    "action": "acquire",
+                    "retention_ms": self.config.get("snapshot_retention_ms", 900000),
+                })})
+                status = json.loads(options.get_option(session + "redis.read_snapshot_status"))
+                if status.get("state") != "active" or not status.get("handle"):
+                    raise ConnectorError("Flight SQL snapshot acquisition did not succeed.")
+                options.set_options(**{guard: status["handle"]})
+            except Exception:
+                raise ConnectorError(
+                    "Could not acquire the required Flight SQL shared snapshot. Use an authenticated "
+                    "TLS gateway supporting snapshot protocol 1 and sufficient snapshot permissions/capacity. "
+                    "Driver diagnostics were withheld to protect credentials."
+                ) from None
+            yield
+        except BaseException:
+            with suppress(Exception):
+                options.set_options(**{session + "redis.read_snapshot": '{"action":"release"}'})
+            raise
+        else:
+            # Keep the guard until close. Release after all Arrow readers close;
+            # errors fail the sync and must never downgrade to live reads.
+            options.set_options(**{session + "redis.read_snapshot": '{"action":"release"}'})
 
     @contextmanager
     def query(self, connection, sql):
