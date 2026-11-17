@@ -334,3 +334,20 @@ newer OS than macOS 15; loading was checked only on the current host. Integratio
 warnings included third-party deprecations, unregistered marks and a read-only
 pytest cache; all tests passed. Hosted AMD64, macOS 15 runtime compatibility,
 Airbyte acceptance/platform and Flight SQL checks were not rerun for this revision.
+
+
+### Revalidation after merging current main
+
+Revision `f78ddb0b0a3282db0e99bc639dca662b9d8dd31a` merges main at
+`ec3979962569c3254805c61af60a919860e73ea7`, including the dependency refresh
+and qualified Flight SQL snapshot support, while retaining the Python 3.14
+minimum and Python 3.14.10 runtime pin. The Linux dependency resolution for
+Python 3.14 retained all 85 refreshed pins from main.
+
+All 194 non-integration tests passed on macOS ARM64 and in the rebuilt Linux
+ARM64 Python 3.14.10 container; 12 integration tests were deselected. Dependency
+checks passed in both environments. Ruff F821/F823, connector metadata,
+whitespace checks and the strict MkDocs build passed. This revalidation did not
+rerun the native, Flight SQL, acceptance or platform integration suites; earlier
+results above and in the Flight snapshot validation record apply to their
+specified revisions.
