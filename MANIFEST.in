@@ -1,2 +1,0 @@
-include Dockerfile requirements.lock
-recursive-include scripts *.py *.sh
