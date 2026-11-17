@@ -1,5 +1,60 @@
 # Validation record
 
+## November 17, 2026 dependency refresh
+
+Validated the working tree based on connector commit
+`0b0a5c03316e6ba2a050227bf489786f44ea9678`. The SHA-256 of
+`git diff --binary -- . ':!docs/validation.md'` was
+`96513d18776f92350b5ab128145f798ec1f98c07a2bd2cc880068b30b21d9b09`.
+Earlier records below continue to describe their original revisions.
+
+The bundled driver was rebuilt from released Redis ADBC
+[v0.0.28](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.28),
+commit `b63a010d88d2b69707594cb9dc063992dac06b32`, using Go 1.27.3.
+Python is now 3.12.15, Airbyte CDK 7.49.0 and PyArrow 26.0.1.
+ADBC manager/Flight SQL 1.13.0, pytest 9.2.0 and MkDocs 1.6.1 were
+already current. Ruff and the versioned GitHub Actions were refreshed.
+The Linux/Python 3.12 lock was regenerated with the command in its header.
+
+The dependency resolver retained twelve older transitive releases because the
+latest CDK restricts them: protocol models, boltons, genson, isodate, nltk,
+pandas, pyrate-limiter, python-dateutil, python-ulid, wcmatch, whenever and
+xmltodict. No CDK constraints were overridden. `jsonschema` is now an explicit
+dependency rather than an incidental transitive import.
+
+Standard-library `hashlib.file_digest` replaces the custom chunked hashing loop
+and whole-file release hashing. Artifact tamper-detection tests still pass.
+The new CDK serializer still removes NULL-valued arbitrary dictionary entries
+and checkpoint IDs, so the source/destination protocol workarounds remain.
+PyArrow still cannot cast strings directly to time64, so the strict nanosecond
+time parser remains. The native release still does not support unmanaged
+Arrow replace, so staged overwrite and lost-reply recovery remain necessary.
+
+Validation:
+
+- 187 non-integration tests passed on macOS ARM64 and Linux ARM64.
+- Nine native integration tests passed on macOS ARM64 against a newly owned,
+  two-shard Redis Enterprise fixture with named-user authentication, trusted TLS,
+  Search and QPF 4x. This includes the real 121-second snapshot expiry test and
+  the exact native driver version assertion.
+- Nine native integration tests also passed on Linux ARM64 candidate image
+  `sha256:09bd54507e96784e61f5dd8815c0cd05dc0f6d40297996f80eeb1961e4997261`,
+  including real snapshot expiry. After rebuilding to include the explicit
+  `jsonschema` dependency declaration, the final Linux ARM64 runtime image,
+  `sha256:91671392717361dffc21267fccbf54b75cdddc04bf520337d9df2d8c18876896`,
+  passed the eight native tests excluding expiry.
+- The macOS native library and platform wheel rebuilt; the wheel and sdist
+  passed `twine check`. A fresh environment installed the wheel, passed
+  dependency checks, ran both CLI specifications and loaded the native entrypoint.
+- Undefined-name lint, metadata validation, strict MkDocs build, actionlint and
+  Python dependency compatibility checks passed.
+
+The local macOS linker warned that cached objects targeted macOS 26 while
+linking for macOS 15. These results validate the current host, not the macOS 15
+minimum. AMD64, hosted GitHub Actions execution, official CAT, full Airbyte
+platform syncs and Flight SQL were not rerun in this refresh. Historical results
+below are not evidence for these new dependencies.
+
 ## Overwrite lost-reply recovery
 
 On November 2, 2026, deterministic stateful cursor tests exercised rename errors
