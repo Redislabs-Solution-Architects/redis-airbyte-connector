@@ -41,18 +41,18 @@ def test_failed_check_status():
     assert source.check(None, {"uri": "redis://localhost"}).status == Status.FAILED
 
 
-def test_flight_shared_snapshot_fails_before_backend_creation():
+def test_plaintext_flight_shared_snapshot_fails_before_backend_creation():
     factory = Mock()
     source = SourceRedisAdbc(factory)
-    config = {"uri": "grpc+tls://user:secret@localhost:1234", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
+    config = {"uri": "grpc://user:secret@localhost:1234", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
 
     status = source.check(None, config)
     assert status.status == Status.FAILED
-    assert "Shared snapshots are unsupported for Flight SQL" in status.message
+    assert "Flight SQL shared snapshots require authenticated verified TLS" in status.message
     assert "secret" not in status.message
-    with pytest.raises(ConnectorError, match="Shared snapshots are unsupported"):
+    with pytest.raises(ConnectorError, match="require authenticated verified TLS"):
         source.discover(None, config)
-    with pytest.raises(ConnectorError, match="Shared snapshots are unsupported"):
+    with pytest.raises(ConnectorError, match="require authenticated verified TLS"):
         next(source.read(None, config, configured()))
     factory.assert_not_called()
 

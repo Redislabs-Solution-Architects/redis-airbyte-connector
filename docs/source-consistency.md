@@ -14,7 +14,7 @@ an explicit connection-scoped shared view. The original connector request was
 | Configuration | Direct Redis ADBC | Flight SQL |
 | --- | --- | --- |
 | Omitted or `read_consistency: best_effort` | Ordinary atomic statement snapshots; different tables may use different generations | Existing gateway behavior; no shared-view guarantee |
-| `read_consistency: shared_snapshot` | One managed catalog generation for the complete attempt | Rejected before backend creation |
+| `read_consistency: shared_snapshot` | One managed catalog generation for the complete attempt | One gateway-owned native generation; requires authenticated TLS and snapshot protocol 1 |
 
 For shared mode, every check, discover or read request opens a dedicated native
 connection, sets `adbc.redis.read_snapshot_retention_ms`, and successfully acquires
@@ -91,11 +91,19 @@ binaries does not undo stored data/metadata changes. This applies to both source
 and destination. Native macOS artifacts now require macOS 15+ on ARM64; Linux
 connector builds retain their Bookworm/glibc 2.36 baseline and use Go 1.27.3.
 
-Flight SQL shared snapshots remain unsupported. The gateway needs its own
-metadata/session binding, option propagation and lifecycle implementation and
-validation. A native driver upgrade alone cannot provide those guarantees.
-Gateway support is tracked in
-[redis/redis-apache-arrow-flight#65](https://github.com/redis/redis-apache-arrow-flight/issues/65).
+Flight SQL shared mode uses the gateway's session-scoped protocol 1. The connector
+requires `grpc+tls://`, enables cookie middleware, probes the protocol, acquires
+before discovery, validates an active status, and installs the owned attempt
+handle. Release occurs after all readers close, including error and generator
+cleanup. Failed/expired/lost state never switches to another connection or live
+reads. Session/header overrides and disabled certificate verification are refused.
+No cross-replica or durable reconnect/resume is supported. A native driver upgrade
+alone cannot provide this gateway contract.
+
+Configure Flight username/password and a trusted CA through `database_options`;
+`adbc.flight.sql.client_option.tls_root_certs` accepts the CA PEM. This does not
+change the bundled native library. See the [gateway contract](https://github.com/redis/redis-apache-arrow-flight/blob/main/docs/shared-read-snapshots.md)
+and this change's [transport qualification](flight-snapshot-validation.md).
 
 See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.28/docs/shared-read-snapshots.md)
 for authority, resource, unsupported-operation and storage details.

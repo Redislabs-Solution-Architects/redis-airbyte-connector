@@ -343,3 +343,64 @@ def test_inline_ca_rejects_conflicting_modes(config):
     from source_redis_adbc.backend import connect
     with pytest.raises(ConnectorError, match='Inline Redis CA'):
         connect({**config, 'tls_ca_certificate': 'test CA'})
+
+
+def test_flight_shared_snapshot_lifecycle_and_guard():
+    import json
+    source, conn, cursor = backend(Reader([pa.record_batch([[1], ["old"]], schema=SCHEMA)]))
+    source.config = {"uri": "grpc+tls://localhost:8815", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
+    session = "adbc.flight.sql.session.option."
+    conn.adbc_connection.get_option.side_effect = lambda key: (
+        "1" if key == session + "redis.read_snapshot_protocol" else
+        json.dumps({"state": "active", "handle": "owned"})
+    )
+    events = []
+    conn.adbc_connection.set_options.side_effect = lambda **kwargs: events.append(kwargs)
+    rows = list(source.read(selection()))
+    assert rows[0][1] == {"id": "1", "label": "old"}
+    assert json.loads(events[0][session + "redis.read_snapshot"]) == {"action": "acquire", "retention_ms": 900000}
+    assert events[1] == {"adbc.flight.sql.rpc.call_header.x-redis-read-snapshot": "owned"}
+    assert events[2] == {session + "redis.read_snapshot": '{"action":"release"}'}
+    assert conn.close.called and cursor.close.called
+
+
+@pytest.mark.parametrize("extra", [
+    {"adbc.flight.sql.session.option.redis.read_snapshot": "{}"},
+    {"adbc.flight.sql.rpc.call_header.x-redis-read-snapshot": "foreign"},
+    {"adbc.flight.sql.rpc.with_cookie_middleware": "false"},
+    {"adbc.flight.sql.client_option.tls_skip_verify": "true"},
+])
+def test_flight_snapshot_rejects_unsafe_overrides(extra):
+    config = {"uri": "grpc+tls://localhost", "connection_type": "flight_sql", "read_consistency": "shared_snapshot", "database_options": extra}
+    with pytest.raises(ConnectorError, match="cannot override"):
+        validate_config(config, SourceRedisAdbc().spec(None).connectionSpecification)
+
+
+def test_flight_snapshot_unknown_protocol_fails_without_live_read():
+    source, conn, cursor = backend(Reader([]))
+    source.config = {"uri": "grpc+tls://localhost", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
+    conn.adbc_connection.get_option.return_value = "unknown"
+    with pytest.raises(ConnectorError, match="Could not acquire"):
+        list(source.read(selection()))
+    cursor.execute.assert_not_called()
+    conn.close.assert_called_once()
+
+
+def test_flight_snapshot_late_error_releases_without_retry():
+    reader = Reader([pa.record_batch([[1], ["old"]], schema=SCHEMA)], late_error=RuntimeError("secret driver failure"))
+    source, conn, cursor = backend(reader)
+    source.config = {"uri": "grpc+tls://localhost", "connection_type": "flight_sql", "read_consistency": "shared_snapshot"}
+    session = "adbc.flight.sql.session.option."
+    conn.adbc_connection.get_option.side_effect = lambda key: "1" if key.endswith("protocol") else '{"state":"active","handle":"owned"}'
+    events = []
+    conn.adbc_connection.set_options.side_effect = lambda **kwargs: events.append(kwargs)
+    records = source.read(selection())
+    assert next(records)[1]["id"] == "1"
+    with pytest.raises(ConnectorError) as raised:
+        list(records)
+    assert "secret" not in str(raised.value)
+    assert events[-1] == {session + "redis.read_snapshot": '{"action":"release"}'}
+    assert sum('"action": "acquire"' in str(event) for event in events) == 1
+    cursor.adbc_cancel.assert_called_once()
+    cursor.close.assert_called_once()
+    conn.close.assert_called_once()
