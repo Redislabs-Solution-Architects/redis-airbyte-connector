@@ -26,7 +26,7 @@ docker pull ghcr.io/redislabs-solution-architects/destination-redis-adbc:0.2.0
 Use those full image names when registering custom connectors in Airbyte.
 
 For direct CLI use, install both connectors and the native driver with Python
-3.11–3.14:
+3.14:
 
 ```sh
 python -m pip install redis-airbyte-connector==0.2.0
@@ -57,7 +57,7 @@ use `host.docker.internal` to reach Redis running on your host, or use a Redis
 container's service name on a shared Docker network.
 
 The native Redis driver is built from commit
-`b63a010d88d2b69707594cb9dc063992dac06b32` (v0.0.28) and bundled in the images and platform wheels. Runtime: Python 3.12.15,
+`b63a010d88d2b69707594cb9dc063992dac06b32` (v0.0.28) and bundled in the images and platform wheels. Runtime: Python 3.14.10,
 Airbyte CDK 7.49.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.1.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through
@@ -272,7 +272,7 @@ python3 scripts/enterprise_env.py e2e
 ## Development and validation
 
 ```sh
-python3.12 -m venv .venv
+python3.14 -m venv .venv
 .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest -m 'not integration'
 docker build --target test -t source-redis-adbc-test:0.2.0 .
@@ -284,7 +284,7 @@ editable/source installations, run `python scripts/build_native.py` first. Set `
 only when testing a custom native shared library.
 All integration tests require a dedicated, disposable Redis Enterprise cluster
 (Redis Software or Redis Cloud) with Search, TLS enabled, and a database username
-and password. Create the local environment with Python 3.11+, Docker, and OpenSSL:
+and password. Create the local environment with Python 3.14, Docker, and OpenSSL:
 
 ```sh
 python3 scripts/enterprise_env.py up

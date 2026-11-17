@@ -8,7 +8,7 @@ RUN git init && git remote add origin https://github.com/redis/redis-adbc-driver
 WORKDIR /driver/go
 RUN make build VERSION=${REDIS_ADBC_VERSION}
 
-FROM python:3.12.15-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70 AS runtime
+FROM python:3.14.10-slim-bookworm@sha256:3fe1a0b6c2d6b2ebb572906cdabeca75aeb558c0c17db5ffefbcf8094871c32b AS runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     AIRBYTE_ENTRYPOINT="python -m source_redis_adbc"

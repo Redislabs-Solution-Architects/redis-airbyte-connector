@@ -1,5 +1,5 @@
-# Resolved for Python 3.12 / Linux; regenerate with:
-# uv pip compile pyproject.toml --python-version 3.12 --python-platform linux --upgrade --no-header --no-annotate
+# Resolved for Python 3.14 / Linux; regenerate with:
+# uv pip compile pyproject.toml --python-version 3.14 --python-platform linux --upgrade --no-header --no-annotate
 adbc-driver-flightsql==1.13.0
 adbc-driver-manager==1.13.0
 airbyte-cdk==7.49.0
