@@ -58,7 +58,7 @@ container's service name on a shared Docker network.
 
 The native Redis driver is built from commit
 `b63a010d88d2b69707594cb9dc063992dac06b32` (v0.0.28) and bundled in the images and platform wheels. Runtime: Python 3.14.10,
-Airbyte CDK 7.45.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.0.
+Airbyte CDK 7.49.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.1.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through
 Airbyte to the destination, and no native Arrow transport or speedup is claimed.
@@ -127,11 +127,13 @@ separate table reads can observe different committed generations.
 
 Set `"read_consistency": "shared_snapshot"` for one managed catalog generation
 across metadata validation and every selected table/view in a full-refresh
-attempt. Direct Redis ADBC is required. The connector acquires before read-time
+attempt. Use direct Redis ADBC or an independently qualified authenticated TLS
+Flight SQL gateway with shared snapshot protocol 1. The connector acquires before read-time
 rediscovery, reads sequentially on that connection, and releases after readers
 close. Each check, discover and read request has its own view; a previous
-discover job does not establish the read attempt's view. Flight SQL rejects this
-mode before connecting. An unsupported driver, failed acquisition, expiry or
+discover job does not establish the read attempt's view. Flight SQL uses a fresh
+cookie session and an owned snapshot guard; plaintext and session/header/TLS
+safety overrides are refused. An unsupported driver/gateway, failed acquisition, expiry or
 unavailable view fails the attempt without falling back to newer data.
 
 `snapshot_retention_ms` sets the fixed shared-view lifetime: default 900000

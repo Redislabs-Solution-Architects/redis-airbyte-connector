@@ -11,10 +11,11 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.14,<3.15"
 dependencies = [
-  "airbyte-cdk==7.45.0",
+  "airbyte-cdk==7.49.0",
   "adbc-driver-manager==1.13.0",
   "adbc-driver-flightsql==1.13.0",
-  "pyarrow==26.0.0",
+  "pyarrow==26.0.1",
+  "jsonschema==4.26.0",
 ]
 
 [project.urls]

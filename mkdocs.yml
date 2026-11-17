@@ -18,6 +18,7 @@ nav:
   - Source connector: source.md
   - Destination connector: destination.md
   - Source consistency: source-consistency.md
+  - Flight snapshot validation: flight-snapshot-validation.md
   - Validation: validation.md
   - Releasing: releasing.md
   - Publishing the docs: website.md

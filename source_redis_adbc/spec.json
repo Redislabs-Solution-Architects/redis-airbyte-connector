@@ -57,7 +57,7 @@
         ],
         "default": "best_effort",
         "title": "Read consistency requirement",
-        "description": "best_effort uses separate statement read views. shared_snapshot binds metadata and all selected managed table/view reads in one full-refresh attempt to the same catalog generation. Requires direct Redis ADBC v0.0.24 or compatible newer library and protocol-17 storage. Flight SQL shared snapshots are unsupported."
+        "description": "best_effort uses separate statement read views. shared_snapshot binds metadata and all selected managed table/view reads in one full-refresh attempt to the same catalog generation. Requires direct Redis ADBC v0.0.24 or compatible newer library and protocol-17 storage, or an independently qualified authenticated TLS Flight SQL gateway supporting shared snapshot protocol 1."
       },
       "snapshot_retention_ms": {
         "type": "integer",
