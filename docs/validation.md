@@ -1,5 +1,27 @@
 # Validation record
 
+## November 18, 2026 v0.2.1 preparation
+
+Local checks validated connector commit
+`7f3a72403061d97e24d1819fb94f02a41dac9a74`, based on main
+`97920f0a66c88be5ba0bc63eb2c1e2c40627b0f3`. The bundled driver was rebuilt
+from released Redis ADBC [v0.0.29](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.29),
+commit `30a9eefbf13d19b3e3129171f8ecdc5579b852a2`, using Go 1.27.4.
+Earlier records retain their original driver versions and validation scope.
+
+- Python 3.14.10 on macOS ARM64: 194 non-integration tests passed.
+- Undefined-name lint and source/destination catalog metadata checks passed.
+- Source distribution and macOS ARM64 wheel built; Twine checks passed.
+- The wheel installed into a separate environment. Outside the checkout,
+  both CLI `spec` commands succeeded and the bundled native library loaded
+  with the `AdbcDriverRedisInit` entry point present.
+
+These local checks do not establish Linux, native TLS integration, Airbyte
+acceptance or platform-sync qualification. Hosted checks are tracked in
+[release preparation PR #25](https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector/pull/25);
+the tagged publishing workflow must pass all release gates and verify public
+artifacts before finalizing the GitHub release.
+
 ## November 17, 2026 dependency refresh
 
 Validated the working tree based on connector commit

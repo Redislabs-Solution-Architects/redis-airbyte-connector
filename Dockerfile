@@ -1,7 +1,7 @@
 # The driver and Python runtime are deliberately pinned independently of main.
-FROM golang:1.27.3-bookworm@sha256:dc0963f32053e4bc451d24d87e3892d42d01021b61f093e98eb95c0352bb84b0 AS driver
-ARG REDIS_ADBC_REF=b63a010d88d2b69707594cb9dc063992dac06b32
-ARG REDIS_ADBC_VERSION=v0.0.28
+FROM golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea AS driver
+ARG REDIS_ADBC_REF=30a9eefbf13d19b3e3129171f8ecdc5579b852a2
+ARG REDIS_ADBC_VERSION=v0.0.29
 WORKDIR /driver
 RUN git init && git remote add origin https://github.com/redis/redis-adbc-driver.git \
     && git fetch --depth 1 origin ${REDIS_ADBC_REF} && git checkout --detach FETCH_HEAD
@@ -23,7 +23,7 @@ COPY --from=driver /driver/go/build/libadbc_driver_redis.so ./source_redis_adbc/
 COPY --from=driver /driver/LICENSE ./source_redis_adbc/native-LICENSE
 RUN pip install --no-cache-dir --no-build-isolation --no-deps . && useradd --uid 10001 --create-home connector
 USER connector
-LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/source-redis-adbc io.airbyte.version=0.2.0
+LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/source-redis-adbc io.airbyte.version=0.2.1
 ENTRYPOINT ["python", "-m", "source_redis_adbc"]
 
 FROM runtime AS test
@@ -39,7 +39,7 @@ FROM runtime AS production
 
 FROM runtime AS destination
 ENV AIRBYTE_ENTRYPOINT="python -m destination_redis_adbc"
-LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/destination-redis-adbc io.airbyte.version=0.2.0
+LABEL io.airbyte.name=ghcr.io/redislabs-solution-architects/destination-redis-adbc io.airbyte.version=0.2.1
 ENTRYPOINT ["python", "-m", "destination_redis_adbc"]
 
 FROM production AS default-source

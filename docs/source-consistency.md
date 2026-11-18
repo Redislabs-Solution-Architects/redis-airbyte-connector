@@ -3,8 +3,8 @@
 The source integrates the native reusable read view released by
 [driver #365](https://github.com/redis/redis-adbc-driver/issues/365) in
 [v0.0.24](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.24). The bundled
-driver is now [v0.0.28](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.28),
-pinned to `b63a010d88d2b69707594cb9dc063992dac06b32`. This supersedes the November 2
+driver is now [v0.0.29](https://github.com/redis/redis-adbc-driver/releases/tag/v0.0.29),
+pinned to `30a9eefbf13d19b3e3129171f8ecdc5579b852a2`. This supersedes the November 2
 feasibility record: the driver now provides both atomic statement snapshots and
 an explicit connection-scoped shared view. The original connector request was
 [#12](https://github.com/Redislabs-Solution-Architects/redis-airbyte-connector/issues/12).
@@ -105,5 +105,5 @@ Configure Flight username/password and a trusted CA through `database_options`;
 change the bundled native library. See the [gateway contract](https://github.com/redis/redis-apache-arrow-flight/blob/main/docs/shared-read-snapshots.md)
 and this change's [transport qualification](flight-snapshot-validation.md).
 
-See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.28/docs/shared-read-snapshots.md)
+See the pinned [upstream API and lifecycle contract](https://github.com/redis/redis-adbc-driver/blob/v0.0.29/docs/shared-read-snapshots.md)
 for authority, resource, unsupported-operation and storage details.

@@ -19,8 +19,8 @@ Published container images include the native Redis driver and are the primary
 installation method for self-managed Airbyte:
 
 ```sh
-docker pull ghcr.io/redislabs-solution-architects/source-redis-adbc:0.2.0
-docker pull ghcr.io/redislabs-solution-architects/destination-redis-adbc:0.2.0
+docker pull ghcr.io/redislabs-solution-architects/source-redis-adbc:0.2.1
+docker pull ghcr.io/redislabs-solution-architects/destination-redis-adbc:0.2.1
 ```
 
 Use those full image names when registering custom connectors in Airbyte.
@@ -29,7 +29,7 @@ For direct CLI use, install both connectors and the native driver with Python
 3.14:
 
 ```sh
-python -m pip install redis-airbyte-connector==0.2.0
+python -m pip install redis-airbyte-connector==0.2.1
 source-redis-adbc spec
 destination-redis-adbc spec
 ```
@@ -43,13 +43,13 @@ required, and installing the package does not start a Redis server.
 ## Build and run
 
 ```sh
-docker build --target runtime -t source-redis-adbc:0.2.0 .
-docker run --rm source-redis-adbc:0.2.0 spec
+docker build --target runtime -t source-redis-adbc:0.2.1 .
+docker run --rm source-redis-adbc:0.2.1 spec
 mkdir -p secrets
 cp examples/config.json secrets/config.json
 # Edit secrets/config.json for your Redis Software or Redis Cloud endpoint.
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.0 check --config /config/config.json
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.0 discover --config /config/config.json
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.1 check --config /config/config.json
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.1 discover --config /config/config.json
 ```
 
 Inside a container, `localhost` refers to that container. On Docker Desktop,
@@ -57,13 +57,13 @@ use `host.docker.internal` to reach Redis running on your host, or use a Redis
 container's service name on a shared Docker network.
 
 The native Redis driver is built from commit
-`b63a010d88d2b69707594cb9dc063992dac06b32` (v0.0.28) and bundled in the images and platform wheels. Runtime: Python 3.14.10,
+`30a9eefbf13d19b3e3129171f8ecdc5579b852a2` (v0.0.29) and bundled in the images and platform wheels. Runtime: Python 3.14.10,
 Airbyte CDK 7.49.0, ADBC manager/Flight SQL 1.13.0, PyArrow 26.0.1.
 Resolved transitive Python dependencies are pinned in `requirements.lock`;
 base images are pinned by digest. This uses the CDK's JSON/stdio interface; Arrow batches do not pass through
 Airbyte to the destination, and no native Arrow transport or speedup is claimed.
 
-Register `source-redis-adbc:0.2.0` as a custom source in a self-managed Airbyte
+Register `source-redis-adbc:0.2.1` as a custom source in a self-managed Airbyte
 installation that can pull your image. Discover the catalog, select streams and
 fields, and choose Full Refresh with Overwrite or Append at the destination.
 Push the image to your own registry when Airbyte runs on another machine.
@@ -72,7 +72,7 @@ For direct CLI reads, create a configured catalog from discovery (see
 `examples/catalog.json`) and run:
 
 ```sh
-docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.0 \
+docker run --rm -v "$PWD/secrets:/config:ro" source-redis-adbc:0.2.1 \
   read --config /config/config.json --catalog /config/catalog.json
 ```
 
@@ -122,7 +122,7 @@ ADBC cancellation. SIGKILL cannot run cleanup. Backpressure stops the source
 from requesting the next Arrow batch; the driver/server may buffer data.
 
 `read_consistency` defaults to `best_effort`, including when omitted. With the
-bundled v0.0.28 driver, each native SELECT has an atomic statement snapshot, but
+bundled v0.0.29 driver, each native SELECT has an atomic statement snapshot, but
 separate table reads can observe different committed generations.
 
 Set `"read_consistency": "shared_snapshot"` for one managed catalog generation
@@ -142,7 +142,7 @@ and complete consumption of all tables; it cannot be extended. Snapshot options
 are managed by the connector and cannot be passed through `database_options`.
 See [source consistency](docs/source-consistency.md) for limits and retry behavior.
 
-**Driver storage compatibility:** v0.0.28 uses storage protocol 17 and rejects
+**Driver storage compatibility:** v0.0.29 uses storage protocol 17 and rejects
 earlier driver catalogs. There is no in-place upgrade/migration path. Use a fresh
 isolated driver database or the driver's explicitly supported managed import
 alongside application-owned data without legacy driver metadata. Preserve a
@@ -173,13 +173,13 @@ bash scripts/test-flight-sql.sh
 Build the companion destination from the same pinned driver/runtime:
 
 ```sh
-docker build --target destination -t destination-redis-adbc:0.2.0 .
-docker run --rm destination-redis-adbc:0.2.0 spec
+docker build --target destination -t destination-redis-adbc:0.2.1 .
+docker run --rm destination-redis-adbc:0.2.1 spec
 cp examples/destination-config.json secrets/destination-config.json
 # Edit the URI before checking or writing.
-docker run --rm -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.2.0 \
+docker run --rm -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.2.1 \
   check --config /config/destination-config.json
-docker run --rm -i -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.2.0 \
+docker run --rm -i -v "$PWD/secrets:/config:ro" destination-redis-adbc:0.2.1 \
   write --config /config/destination-config.json --catalog /config/catalog.json < records.jsonl
 ```
 
@@ -275,8 +275,8 @@ python3 scripts/enterprise_env.py e2e
 python3.14 -m venv .venv
 .venv/bin/pip install -e '.[test]'
 .venv/bin/pytest -m 'not integration'
-docker build --target test -t source-redis-adbc-test:0.2.0 .
-docker run --rm source-redis-adbc-test:0.2.0 -m 'not integration'
+docker build --target test -t source-redis-adbc-test:0.2.1 .
+docker run --rm source-redis-adbc-test:0.2.1 -m 'not integration'
 ```
 
 Platform-wheel installations use the bundled native driver by default. For
