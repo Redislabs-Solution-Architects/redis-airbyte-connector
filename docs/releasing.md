@@ -136,8 +136,8 @@ Airbyte support level or catalog listing.
 
 ## Native builds
 
-Always use the latest stable Redis ADBC release, currently v0.0.28 at
-`b63a010d88d2b69707594cb9dc063992dac06b32`. Check the upstream latest release
+Always use the latest stable Redis ADBC release, currently v0.0.29 at
+`30a9eefbf13d19b3e3129171f8ecdc5579b852a2`. Check the upstream latest release
 before dependency updates or connector releases. Pin its commit and version in
 both `Dockerfile` and `scripts/build_native.py`, update the native integration
 version assertion and README, then rebuild and validate the artifacts. Pass the

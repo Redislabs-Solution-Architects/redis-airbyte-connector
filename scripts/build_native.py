@@ -9,8 +9,8 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-DRIVER_REF = "b63a010d88d2b69707594cb9dc063992dac06b32"
-DRIVER_VERSION = "v0.0.28"
+DRIVER_REF = "30a9eefbf13d19b3e3129171f8ecdc5579b852a2"
+DRIVER_VERSION = "v0.0.29"
 
 
 def run(*args, **kwargs):
@@ -38,7 +38,7 @@ def main():
             run("git", "init", directory)
             run("git", "-C", directory, "fetch", "--depth", "1", "https://github.com/redis/redis-adbc-driver.git", DRIVER_REF)
             run("git", "-C", directory, "checkout", "--detach", "FETCH_HEAD")
-            environment = {**os.environ, "MACOSX_DEPLOYMENT_TARGET": "15.0", "GOTOOLCHAIN": "go1.27.3"}
+            environment = {**os.environ, "MACOSX_DEPLOYMENT_TARGET": "15.0", "GOTOOLCHAIN": "go1.27.4"}
             subprocess.run(["make", "build", f"VERSION={DRIVER_VERSION}"], cwd=driver / "go", env=environment, check=True)
             shutil.copyfile(driver / "go/build/libadbc_driver_redis.dylib", destination / "libadbc_driver_redis.dylib")
             shutil.copyfile(driver / "LICENSE", destination / "native-LICENSE")
